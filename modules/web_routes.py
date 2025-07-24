@@ -21,7 +21,7 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-def register_routes(app, notification_queue):
+def register_routes(app):
     @app.route('/login', methods=['GET', 'POST'])
     def login():
         if request.method == 'POST':
@@ -73,9 +73,9 @@ def register_routes(app, notification_queue):
     def index():
         try:
             orders = execute_query("SELECT id, account, package, status, created_at FROM orders ORDER BY id DESC LIMIT 5", fetch=True)
-            return render_template('index.html', orders=orders, username=session.get('username'), is_admin=session.get('is_admin'))
+            return jsonify({"success": True, "orders": orders, "username": session.get('username'), "is_admin": session.get('is_admin')})
         except Exception as e:
-            return render_template('index.html', error='获取订单失败', username=session.get('username'), is_admin=session.get('is_admin'))
+            return jsonify({"success": False, "error": "获取订单失败", "username": session.get('username'), "is_admin": session.get('is_admin')})
 
     @app.route('/', methods=['POST'])
     @login_required

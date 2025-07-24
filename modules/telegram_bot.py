@@ -85,7 +85,7 @@ async def on_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("已标记为失败", show_alert=True)
 
 # 主循环
-async def bot_main(queue):
+async def bot_main():
     app = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
@@ -94,16 +94,14 @@ async def bot_main(queue):
     app.add_handler(CommandHandler("seller", on_seller))
     app.add_handler(CommandHandler("active", on_active))
     app.add_handler(CallbackQueryHandler(on_callback_query))
-    # 可选：添加文本消息处理
-    # app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, ...))
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
     while True:
         await asyncio.sleep(3600)
 
-def run_bot(queue):
+def run_bot():
     import asyncio
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(bot_main(queue))
+    loop.run_until_complete(bot_main())

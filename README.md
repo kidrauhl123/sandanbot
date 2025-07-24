@@ -1,45 +1,71 @@
-# 系统性能优化
+# 破天充值系统 - 精简版
 
-为解决订单加载缓慢的问题，我们进行了以下优化：
+一个基于Flask和Telegram Bot的充值订单管理系统，专注于核心功能。
 
-## 1. 自动清理旧订单数据
+## 核心功能
 
-- 添加了`delete_old_orders`函数，可以自动删除指定天数（默认3天）前的订单数据
-- 设置了每天凌晨2点自动执行清理任务
-- 创建了管理员API端点`/admin/api/cleanup-old-orders`，可以手动触发清理操作
+- **买家功能**：上传二维码图片，创建充值订单
+- **卖家功能**：接收订单通知，接单、完成、标记失败
+- **订单管理**：订单状态跟踪（已提交、已接单、已完成、失败）
+- **后台管理**：管理员查看和管理订单、卖家
 
-## 2. 数据库性能优化
+## 技术栈
 
-为PostgreSQL和SQLite数据库添加了以下索引，显著提升查询性能：
+- **后端**：Flask (Python)
+- **数据库**：PostgreSQL
+- **机器人**：python-telegram-bot
+- **前端**：HTML + CSS + JavaScript
 
-- `idx_orders_created_at`：优化按时间查询和删除操作
-- `idx_orders_status`：优化按状态查询操作 
-- `idx_orders_user_id`：优化按用户查询订单操作
+## 环境变量
 
-## 使用说明
-
-### 自动清理
-
-系统已配置每天凌晨2点自动清理3天前的订单数据，无需人工干预。
-
-### 手动清理
-
-管理员可以通过API手动触发清理操作：
-
-```
-POST /admin/api/cleanup-old-orders
-Content-Type: application/json
-
-{
-    "days": 3  // 可选参数，默认为3天
-}
+```bash
+BOT_TOKEN=your-telegram-bot-token
+DATABASE_URL=postgresql://user:password@host:port/database
+FLASK_SECRET=your-secret-key
 ```
 
-## 其他可能的优化建议
+## 安装和运行
 
-除了已实现的优化外，以下措施也可以考虑：
+1. 安装依赖：
+```bash
+pip install -r requirements.txt
+```
 
-1. 分页加载：对大量订单数据实现分页加载，而不是一次性加载全部数据
-2. 数据库连接池：使用连接池管理数据库连接，提高并发性能
-3. 查询优化：检查并优化复杂的SQL查询语句
-4. 缓存机制：为频繁访问的数据添加缓存层 
+2. 设置环境变量
+
+3. 运行应用：
+```bash
+python app.py
+```
+
+## API接口
+
+### 用户接口
+- `POST /` - 创建订单（上传图片）
+- `GET /` - 获取最近订单
+- `POST /orders/confirm/<id>` - 确认订单完成
+
+### 管理员接口
+- `GET /admin/api/orders` - 获取所有订单
+- `GET /admin/api/sellers` - 获取所有卖家
+- `POST /admin/api/sellers` - 添加卖家
+- `DELETE /admin/api/sellers/<id>` - 删除卖家
+
+## Telegram Bot命令
+
+- `/seller` - 卖家查看自己的订单
+- `/active` - 切换卖家激活状态
+
+## 文件结构
+
+```
+├── app.py              # 主应用文件
+├── modules/
+│   ├── constants.py    # 常量定义
+│   ├── database.py     # 数据库操作
+│   ├── telegram_bot.py # Telegram机器人
+│   └── web_routes.py   # Web路由
+├── templates/          # HTML模板
+├── static/            # 静态文件
+└── requirements.txt   # Python依赖
+``` 
