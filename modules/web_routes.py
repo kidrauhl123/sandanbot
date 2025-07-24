@@ -207,10 +207,10 @@ def register_routes(app):
     def admin_api_update_seller_nickname(telegram_id):
         if not session.get('is_admin'):
             return jsonify({"error": "权限不足"}), 403
-            data = request.json
+        data = request.json
         nickname = data.get('nickname')
-                update_seller_nickname(telegram_id, nickname)
-            return jsonify({"success": True})
+        update_seller_nickname(telegram_id, nickname)
+        return jsonify({"success": True})
 
     @app.route('/static/uploads/<path:filename>')
     def serve_uploads(filename):
