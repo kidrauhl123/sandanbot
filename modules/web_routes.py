@@ -73,9 +73,9 @@ def register_routes(app):
     def index():
         try:
             orders = execute_query("SELECT id, account, package, status, created_at FROM orders ORDER BY id DESC LIMIT 5", fetch=True)
-            return jsonify({"success": True, "orders": orders, "username": session.get('username'), "is_admin": session.get('is_admin')})
+            return render_template('index.html', orders=orders, username=session.get('username'), is_admin=session.get('is_admin'))
         except Exception as e:
-            return jsonify({"success": False, "error": "获取订单失败", "username": session.get('username'), "is_admin": session.get('is_admin')})
+            return render_template('index.html', error='获取订单失败', username=session.get('username'), is_admin=session.get('is_admin'))
 
     @app.route('/', methods=['POST'])
     @login_required
