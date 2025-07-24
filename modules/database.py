@@ -92,3 +92,74 @@ def create_order_with_deduction_atomic(account, password, package, remark, usern
     except Exception as e:
         logger.error(f"创建订单失败: {str(e)}", exc_info=True)
         return False, f"创建订单失败: {str(e)}", None, None
+
+def check_db_connection():
+    """检查数据库连接"""
+    try:
+        execute_query("SELECT 1")
+        logger.info("数据库连接正常")
+        return True
+    except Exception as e:
+        logger.error(f"数据库连接失败: {str(e)}")
+        return False
+
+def init_db():
+    """初始化数据库表"""
+    try:
+        # 创建用户表
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                is_admin BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP
+            )
+        """)
+        
+        # 创建卖家表
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS sellers (
+                id SERIAL PRIMARY KEY,
+                telegram_id BIGINT UNIQUE NOT NULL,
+                username VARCHAR(50),
+                first_name VARCHAR(50),
+                nickname VARCHAR(50),
+                is_active BOOLEAN DEFAULT TRUE,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                added_by VARCHAR(50),
+                last_active_at TIMESTAMP
+            )
+        """)
+        
+        # 创建订单表
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS orders (
+                id SERIAL PRIMARY KEY,
+                account VARCHAR(255) NOT NULL,
+                password VARCHAR(255),
+                package VARCHAR(10) NOT NULL,
+                status VARCHAR(20) DEFAULT 'submitted',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                accepted_at TIMESTAMP,
+                completed_at TIMESTAMP,
+                accepted_by VARCHAR(50),
+                remark TEXT,
+                user_id INTEGER REFERENCES users(id),
+                web_user_id VARCHAR(50)
+            )
+        """)
+        
+        # 创建默认管理员用户（如果不存在）
+        admin_password = hash_password('admin123')
+        execute_query("""
+            INSERT INTO users (username, password_hash, is_admin) 
+            VALUES ('admin', %s, TRUE) 
+            ON CONFLICT (username) DO NOTHING
+        """, (admin_password,))
+        
+        logger.info("数据库初始化完成")
+    except Exception as e:
+        logger.error(f"数据库初始化失败: {str(e)}")
+        raise

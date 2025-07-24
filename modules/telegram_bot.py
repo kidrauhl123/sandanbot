@@ -100,6 +100,15 @@ async def bot_main():
     while True:
         await asyncio.sleep(3600)
 
+def process_telegram_update(update_data):
+    """处理Telegram更新（用于webhook）"""
+    try:
+        # 这里可以添加webhook处理逻辑
+        # 目前简化处理，只记录日志
+        logger.info(f"处理Telegram更新: {update_data}")
+    except Exception as e:
+        logger.error(f"处理Telegram更新失败: {str(e)}")
+
 def run_bot():
     import asyncio
     loop = asyncio.new_event_loop()
