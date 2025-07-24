@@ -170,6 +170,43 @@
       margin-right: 3px;
     }
     
+    /* 余额标签样式 */
+    .balance-badge {
+      background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+      color: white;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      box-shadow: 0 2px 5px rgba(76,175,80,0.3);
+      transition: all 0.3s ease;
+    }
+    
+    .balance-badge.negative {
+      background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+      box-shadow: 0 2px 5px rgba(244,67,54,0.3);
+    }
+    
+    .balance-badge i {
+      font-size: 10px;
+    }
+    
+    .balance-info {
+      padding: 8px 12px;
+      color: #666;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .balance-info i {
+      color: #4CAF50;
+    }
+    
     .btn {
       border: none;
       padding: 10px 18px;
@@ -1407,6 +1444,11 @@
       <div class="dropdown-menu">
         <div class="dropdown-menu-header">账户信息</div>
         <div class="dropdown-divider"></div>
+        <div class="balance-info">
+          <i class="fas fa-wallet"></i>
+          <span>余额: <span id="user-balance">加载中...</span></span>
+        </div>
+        <div class="dropdown-divider"></div>
         {% if session.is_admin %}
           <a href="/admin" class="dropdown-menu-item">
             <i class="fas fa-cog"></i>管理后台
@@ -1422,7 +1464,11 @@
       </div>
     </div>
     
-    <!-- 删除余额标签 -->
+    <!-- 余额标签 -->
+    <div class="balance-badge" id="balance-badge">
+      <i class="fas fa-wallet"></i>
+      <span id="balance-display">加载中...</span>
+    </div>
   </div>
 </div>
 
