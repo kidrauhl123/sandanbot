@@ -528,16 +528,6 @@
         </a>
       </div>
     </div>
-    <!-- 在navbar-user下拉菜单或主页面显眼处增加余额明细按钮 -->
-    <button class="btn btn-info" onclick="showUserBalanceRecords()">余额明细</button>
-    <!-- 余额明细弹窗 -->
-    <div class="modal-backdrop" id="user-balance-records-modal">
-      <div class="modal">
-        <div class="modal-header"><h3>余额明细</h3><button class="modal-close" data-dismiss="modal">&times;</button></div>
-        <div class="modal-body"><div id="user-balance-records-list">加载中...</div></div>
-        <div class="modal-footer"><button class="btn btn-secondary" data-dismiss="modal">关闭</button></div>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -790,40 +780,6 @@
       console.error('质疑订单失败', e);
       alert('质疑提交失败，请重试');
     }
-  }
-
-  function openModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
-      modal.style.display = 'block';
-      document.body.style.overflow = 'hidden'; // 防止背景滚动
-    }
-  }
-
-  function closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
-      modal.style.display = 'none';
-      document.body.style.overflow = ''; // 恢复背景滚动
-    }
-  }
-
-  function showUserBalanceRecords() {
-    openModal('user-balance-records-modal');
-    const list = document.getElementById('user-balance-records-list');
-    list.innerHTML = '加载中...';
-    fetch('/api/balance-records').then(r=>r.json()).then(data=>{
-      if(data.success){
-        let html = `<table style='width:100%;font-size:13px;'><tr><th>时间</th><th>类型</th><th>金额</th><th>余额</th><th>原因</th></tr>`;
-        for(const r of data.records){
-          html += `<tr><td>${r.created_at}</td><td>${r.type}</td><td>${r.amount}</td><td>${r.balance_after}</td><td>${r.reason}</td></tr>`;
-        }
-        html += '</table>';
-        list.innerHTML = html;
-      }else{
-        list.innerHTML = '加载失败';
-      }
-    }).catch(()=>{list.innerHTML='加载失败';});
   }
   
   // 页面加载完成后执行

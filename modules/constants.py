@@ -93,15 +93,6 @@ REASON_TEXT_ZH = {
     'Unknown reason': '未知原因'
 }
 
-# ===== 默认套餐价格 =====
-WEB_PRICES = {
-    '1': 12,
-    '2': 18,
-    '3': 30,
-    '6': 50,
-    '12': 84
-}
-
 # ===== 全局变量 =====
 user_languages = defaultdict(lambda: 'en')
 feedback_waiting = {}
