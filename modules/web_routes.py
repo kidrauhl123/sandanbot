@@ -1356,18 +1356,6 @@ def register_routes(app, notification_queue):
             logger.error(f"批量删除订单时出错(未捕获异常): {e}", exc_info=True)
             return jsonify({"success": False, "error": f"服务器内部错误: {str(e)}"}), 500
 
-    # 删除充值相关路由
-
-    # 删除余额明细记录API
-    @app.route('/api/balance/records')
-    @login_required
-    def api_balance_records():
-        """获取余额明细记录（为保持兼容性而添加）"""
-        return jsonify({
-            "success": True,
-            "records": []
-        })
-        
     @app.route('/api/active-sellers')
     @login_required
     def api_active_sellers():
