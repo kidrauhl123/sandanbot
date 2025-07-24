@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 import pytz
 import random
 
-from modules.constants import DATABASE_URL, STATUS, ADMIN_USERNAME, ADMIN_PASSWORD
+from modules.constants import DATABASE_URL, STATUS, ADMIN_USERNAME, ADMIN_PASSWORD, WEB_PRICES
 
 # 设置日志
 logger = logging.getLogger(__name__)
@@ -1884,7 +1884,17 @@ def check_db_connection():
 # ===== 余额系统相关函数 =====
 def get_user_balance(user_id):
     """获取用户余额"""
-    return 0
+    try:
+        if DATABASE_URL.startswith('postgres'):
+            result = execute_query("SELECT balance FROM users WHERE id = %s", (user_id,), fetch=True)
+        else:
+            result = execute_query("SELECT balance FROM users WHERE id = ?", (user_id,), fetch=True)
+        if result and len(result) > 0:
+            return result[0][0]
+        return 0
+    except Exception as e:
+        logger.error(f"获取用户余额失败: {str(e)}", exc_info=True)
+        return 0
 
 def get_user_credit_limit(user_id):
     """获取用户透支额度"""
@@ -1901,32 +1911,84 @@ def refund_order(order_id):
         return False, str(e)
 
 def create_order_with_deduction_atomic(account, password, package, remark, username, user_id):
-    """创建订单（已移除余额扣除功能）"""
+    """创建订单并扣除余额，支持用户特价和默认价格，余额不足时下单失败"""
+    from modules.constants import WEB_PRICES
     try:
-        # 创建订单记录
-        now = get_china_time()
-        
-        # 根据数据库类型选择不同的SQL
-        if DATABASE_URL.startswith('postgres'):
-            # PostgreSQL版本 - 不使用username字段
-            execute_query(
-                """
-                INSERT INTO orders (account, password, package, status, created_at, remark, user_id, web_user_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (account, password, package, 'submitted', now, remark, user_id, username)
-            )
+        # 获取用户余额和特价
+        user_balance = get_user_balance(user_id)
+        custom_prices = get_user_custom_prices(user_id)
+        price = None
+        if package in custom_prices:
+            price = custom_prices[package]
         else:
-            # SQLite版本
-            execute_query(
-                """
-                INSERT INTO orders (account, password, package, status, created_at, remark, user_id, username)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (account, password, package, 'submitted', now, remark, user_id, username)
-            )
-            
-        return True, "订单创建成功", 0, 0
+            price = WEB_PRICES.get(str(package))
+        if price is None:
+            return False, f"套餐{package}价格未设置，请联系管理员", None, None
+        # 检查余额
+        if user_balance is None:
+            return False, "无法获取用户余额", None, None
+        if user_balance < price:
+            return False, f"余额不足，当前余额{user_balance}元，所需{price}元，请先充值", None, None
+        # 开始事务
+        now = get_china_time()
+        if DATABASE_URL.startswith('postgres'):
+            import psycopg2
+            conn = psycopg2.connect(DATABASE_URL)
+            conn.autocommit = False
+            try:
+                cursor = conn.cursor()
+                # 扣除余额
+                cursor.execute("UPDATE users SET balance = balance - %s WHERE id = %s", (price, user_id))
+                cursor.execute("SELECT balance FROM users WHERE id = %s", (user_id,))
+                new_balance = cursor.fetchone()[0]
+                # 写入余额明细
+                cursor.execute("""
+                    INSERT INTO balance_records (user_id, amount, type, reason, reference_id, balance_after, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (user_id, -price, 'consume', f'下单消费: 套餐{package}', None, new_balance, now))
+                # 创建订单
+                cursor.execute("""
+                    INSERT INTO orders (account, password, package, status, created_at, remark, user_id, web_user_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (account, password, package, 'submitted', now, remark, user_id, username))
+                conn.commit()
+                return True, "订单创建成功，已扣除余额", new_balance, price
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"创建订单并扣除余额失败: {str(e)}", exc_info=True)
+                return False, f"创建订单失败: {str(e)}", None, None
+            finally:
+                conn.close()
+        else:
+            # SQLite
+            import sqlite3
+            current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            db_path = os.path.join(current_dir, "orders.db")
+            conn = sqlite3.connect(db_path)
+            try:
+                cursor = conn.cursor()
+                # 扣除余额
+                cursor.execute("UPDATE users SET balance = balance - ? WHERE id = ?", (price, user_id))
+                cursor.execute("SELECT balance FROM users WHERE id = ?", (user_id,))
+                new_balance = cursor.fetchone()[0]
+                # 写入余额明细
+                cursor.execute("""
+                    INSERT INTO balance_records (user_id, amount, type, reason, reference_id, balance_after, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (user_id, -price, 'consume', f'下单消费: 套餐{package}', None, new_balance, now))
+                # 创建订单
+                cursor.execute("""
+                    INSERT INTO orders (account, password, package, status, created_at, remark, user_id, username)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (account, password, package, 'submitted', now, remark, user_id, username))
+                conn.commit()
+                return True, "订单创建成功，已扣除余额", new_balance, price
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"创建订单并扣除余额失败: {str(e)}", exc_info=True)
+                return False, f"创建订单失败: {str(e)}", None, None
+            finally:
+                conn.close()
     except Exception as e:
         logger.error(f"创建订单失败: {str(e)}", exc_info=True)
         return False, f"创建订单失败: {str(e)}", None, None

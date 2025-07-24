@@ -611,6 +611,9 @@
       <div id="users" class="tab-content active">
         <div class="content-header">
           <h2><i class="fas fa-users"></i> 用户管理</h2>
+          <div class="header-actions">
+            <button class="btn btn-info" onclick="showPriceModal()">套餐价格管理</button>
+          </div>
         </div>
         <div class="users-container">
         <table class="data-table">
@@ -767,6 +770,50 @@
       <button class="btn btn-secondary" data-dismiss="modal">取消</button>
       <button class="btn btn-primary" onclick="addSeller()">添加</button>
     </div>
+  </div>
+</div>
+
+<!-- 余额调整弹窗 -->
+<div class="modal-backdrop" id="balance-modal">
+  <div class="modal">
+    <div class="modal-header"><h3>余额调整</h3><button class="modal-close" data-dismiss="modal">&times;</button></div>
+    <div class="modal-body">
+      <div id="balance-modal-error" class="error-message" style="display:none;"></div>
+      <form id="balance-form">
+        <input type="hidden" id="balance-user-id">
+        <div class="form-group"><label>用户名</label><input type="text" id="balance-username" class="form-control" readonly></div>
+        <div class="form-group"><label>调整金额(正为加，负为减)</label><input type="number" id="balance-amount" class="form-control" required></div>
+        <div class="form-group"><label>原因</label><input type="text" id="balance-reason" class="form-control" value="管理员调整"></div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-dismiss="modal">取消</button>
+      <button class="btn btn-primary" onclick="submitBalance()">提交</button>
+    </div>
+  </div>
+</div>
+<!-- 余额明细弹窗 -->
+<div class="modal-backdrop" id="balance-records-modal">
+  <div class="modal">
+    <div class="modal-header"><h3>余额明细</h3><button class="modal-close" data-dismiss="modal">&times;</button></div>
+    <div class="modal-body"><div id="balance-records-list">加载中...</div></div>
+    <div class="modal-footer"><button class="btn btn-secondary" data-dismiss="modal">关闭</button></div>
+  </div>
+</div>
+<!-- 特价弹窗 -->
+<div class="modal-backdrop" id="custom-price-modal">
+  <div class="modal">
+    <div class="modal-header"><h3>用户特价</h3><button class="modal-close" data-dismiss="modal">&times;</button></div>
+    <div class="modal-body"><div id="custom-price-list">加载中...</div></div>
+    <div class="modal-footer"><button class="btn btn-secondary" data-dismiss="modal">关闭</button></div>
+  </div>
+</div>
+<!-- 价格管理弹窗 -->
+<div class="modal-backdrop" id="price-modal">
+  <div class="modal">
+    <div class="modal-header"><h3>套餐价格管理</h3><button class="modal-close" data-dismiss="modal">&times;</button></div>
+    <div class="modal-body"><div id="price-list">加载中...</div></div>
+    <div class="modal-footer"><button class="btn btn-secondary" data-dismiss="modal">关闭</button></div>
   </div>
 </div>
 
@@ -1259,6 +1306,155 @@
     }
   `;
   document.head.appendChild(style);
+
+  // 加载所有用户余额
+  async function loadUserBalances() {
+    const rows = document.querySelectorAll('#users-table-body tr[data-id]');
+    for (const row of rows) {
+      const userId = row.getAttribute('data-id');
+      try {
+        const resp = await fetch(`/admin/api/balance-records/${userId}`);
+        const data = await resp.json();
+        if (data.success && data.records.length > 0) {
+          const last = data.records[0];
+          row.querySelector(`#user-balance-${userId}`).textContent = last.balance_after;
+        } else {
+          row.querySelector(`#user-balance-${userId}`).textContent = '0';
+        }
+      } catch {
+        row.querySelector(`#user-balance-${userId}`).textContent = '加载失败';
+      }
+    }
+  }
+
+  // 显示余额调整弹窗
+  function showBalanceModal(userId, username) {
+    document.getElementById('balance-user-id').value = userId;
+    document.getElementById('balance-username').value = username;
+    document.getElementById('balance-amount').value = '';
+    document.getElementById('balance-reason').value = '管理员调整';
+    document.getElementById('balance-modal-error').style.display = 'none';
+    openModal('balance-modal');
+  }
+  // 提交余额调整
+  async function submitBalance() {
+    const userId = document.getElementById('balance-user-id').value;
+    const amount = parseFloat(document.getElementById('balance-amount').value);
+    const reason = document.getElementById('balance-reason').value;
+    if (!amount) return;
+    try {
+      const resp = await fetch(`/admin/api/users/${userId}/balance`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({amount, reason})
+      });
+      const data = await resp.json();
+      if (data.success) {
+        showToast('余额调整成功', 'success');
+        closeModal('balance-modal');
+        loadUserBalances();
+      } else {
+        document.getElementById('balance-modal-error').textContent = data.error || '操作失败';
+        document.getElementById('balance-modal-error').style.display = 'block';
+      }
+    } catch (e) {
+      document.getElementById('balance-modal-error').textContent = '网络错误';
+      document.getElementById('balance-modal-error').style.display = 'block';
+    }
+  }
+  // 显示余额明细
+  async function showBalanceRecords(userId, username) {
+    openModal('balance-records-modal');
+    const list = document.getElementById('balance-records-list');
+    list.innerHTML = '加载中...';
+    try {
+      const resp = await fetch(`/admin/api/balance-records/${userId}`);
+      const data = await resp.json();
+      if (data.success) {
+        let html = `<b>用户：</b>${username}<br><table style='width:100%;font-size:13px;'><tr><th>时间</th><th>类型</th><th>金额</th><th>余额</th><th>原因</th></tr>`;
+        for (const r of data.records) {
+          html += `<tr><td>${r.created_at}</td><td>${r.type}</td><td>${r.amount}</td><td>${r.balance_after}</td><td>${r.reason}</td></tr>`;
+        }
+        html += '</table>';
+        list.innerHTML = html;
+      } else {
+        list.innerHTML = '加载失败';
+      }
+    } catch {
+      list.innerHTML = '加载失败';
+    }
+  }
+  // 显示特价弹窗
+  async function showCustomPriceModal(userId, username) {
+    openModal('custom-price-modal');
+    const list = document.getElementById('custom-price-list');
+    list.innerHTML = '加载中...';
+    try {
+      const resp = await fetch(`/admin/api/user-custom-price?user_id=${userId}`);
+      const data = await resp.json();
+      if (data.success) {
+        let html = `<b>用户：</b>${username}<br><table style='width:100%;font-size:13px;'><tr><th>套餐</th><th>价格</th><th>操作</th></tr>`;
+        for (const pkg in data.custom_prices) {
+          html += `<tr><td>${pkg}</td><td>${data.custom_prices[pkg]}</td><td><button class='btn btn-sm btn-danger' onclick='deleteCustomPrice(${userId},"${pkg}")'>删除</button></td></tr>`;
+        }
+        html += '</table>';
+        html += `<hr><b>新增/修改特价</b><br>套餐:<input id='cp-pkg' style='width:40px'> 价格:<input id='cp-price' style='width:60px'> <button class='btn btn-sm btn-primary' onclick='addCustomPrice(${userId})'>保存</button>`;
+        list.innerHTML = html;
+      } else {
+        list.innerHTML = '加载失败';
+      }
+    } catch {
+      list.innerHTML = '加载失败';
+    }
+  }
+  async function addCustomPrice(userId) {
+    const pkg = document.getElementById('cp-pkg').value;
+    const price = parseFloat(document.getElementById('cp-price').value);
+    if (!pkg || isNaN(price)) return;
+    await fetch('/admin/api/user-custom-price', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({user_id: userId, package: pkg, price})
+    });
+    showCustomPriceModal(userId, document.getElementById('balance-username').value);
+  }
+  async function deleteCustomPrice(userId, pkg) {
+    await fetch('/admin/api/user-custom-price', {
+      method: 'DELETE', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({user_id: userId, package: pkg})
+    });
+    showCustomPriceModal(userId, document.getElementById('balance-username').value);
+  }
+  // 显示价格管理弹窗
+  async function showPriceModal() {
+    openModal('price-modal');
+    const list = document.getElementById('price-list');
+    list.innerHTML = '加载中...';
+    try {
+      const resp = await fetch('/admin/api/prices');
+      const data = await resp.json();
+      if (data.success) {
+        let html = `<table style='width:100%;font-size:13px;'><tr><th>套餐</th><th>价格</th><th>操作</th></tr>`;
+        for (const pkg in data.prices) {
+          html += `<tr><td>${pkg}</td><td><input id='price-input-${pkg}' value='${data.prices[pkg]}' style='width:60px'></td><td><button class='btn btn-sm btn-primary' onclick='savePrice("${pkg}")'>保存</button></td></tr>`;
+        }
+        html += '</table>';
+        list.innerHTML = html;
+      } else {
+        list.innerHTML = '加载失败';
+      }
+    } catch {
+      list.innerHTML = '加载失败';
+    }
+  }
+  async function savePrice(pkg) {
+    const price = parseFloat(document.getElementById('price-input-' + pkg).value);
+    if (isNaN(price)) return;
+    await fetch('/admin/api/prices', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({package: pkg, price})
+    });
+    showPriceModal();
+  }
 
   document.addEventListener('DOMContentLoaded', () => {
     // 加载用户和卖家数据

@@ -1398,20 +1398,31 @@
   <div class="navbar-user">
     <div class="user-dropdown">
       <div class="user-info">
-        <div class="user-avatar">{{ username[0]|upper }}</div>
-        <span class="user-name">{{ username }}</span>
-        <span class="balance-badge">余额：<span id="user-balance">{{ balance }}</span></span>
-        {% if is_admin %}
+        <div class="user-avatar">{{ session.username[0]|upper }}</div>
+        <span class="user-name">{{ session.username }}</span>
+        {% if session.is_admin %}
           <span class="admin-badge">管理员</span>
         {% endif %}
       </div>
       <div class="dropdown-menu">
         <div class="dropdown-menu-header">账户信息</div>
         <div class="dropdown-divider"></div>
-        <a href="/dashboard" class="dropdown-menu-item"><i class="fas fa-user"></i>个人中心</a>
-        <a href="/logout" class="dropdown-menu-item danger"><i class="fas fa-sign-out-alt"></i>退出登录</a>
+        {% if session.is_admin %}
+          <a href="/admin" class="dropdown-menu-item">
+            <i class="fas fa-cog"></i>管理后台
+          </a>
+        {% else %}
+          <a href="/dashboard" class="dropdown-menu-item">
+            <i class="fas fa-user"></i>我的后台
+          </a>
+        {% endif %}
+        <a href="/logout" class="dropdown-menu-item danger">
+          <i class="fas fa-sign-out-alt"></i>退出登录
+        </a>
       </div>
     </div>
+    
+    <!-- 删除余额标签 -->
   </div>
 </div>
 
@@ -3965,52 +3976,6 @@
       console.error("找不到模态框元素，无法添加点击事件!");
     }
   });
-
-  // 下单前校验余额
-  function checkBalanceBeforeOrder(price) {
-    const balance = parseFloat(document.getElementById('user-balance').innerText);
-    if (balance < price) {
-      alert('余额不足，无法下单！');
-      return false;
-    }
-    return true;
-  }
-  // 拦截表单提交
-  window.addEventListener('DOMContentLoaded', function() {
-    const form = document.querySelector('form[action="/"]');
-    if(form) {
-      form.addEventListener('submit', function(e) {
-        // 获取套餐价格
-        let pkg = form.querySelector('[name="package"]').value;
-        let price = 0;
-        if(window.WEB_PRICES && window.WEB_PRICES[pkg]) price = window.WEB_PRICES[pkg];
-        if(!checkBalanceBeforeOrder(price)) e.preventDefault();
-      });
-    }
-  });
-</script>
-
-<!-- 只保留一个余额展示和校验脚本，插入在</body>前 -->
-<script>
-function checkBalanceBeforeOrder(price) {
-  const balance = parseFloat(document.getElementById('user-balance').innerText);
-  if (balance < price) {
-    alert('余额不足，无法下单！');
-    return false;
-  }
-  return true;
-}
-window.addEventListener('DOMContentLoaded', function() {
-  const form = document.querySelector('form[action="/"]');
-  if(form) {
-    form.addEventListener('submit', function(e) {
-      let pkg = form.querySelector('[name="package"]').value;
-      let price = 0;
-      if(window.WEB_PRICES && window.WEB_PRICES[pkg]) price = window.WEB_PRICES[pkg];
-      if(!checkBalanceBeforeOrder(price)) e.preventDefault();
-    });
-  }
-});
 </script>
 
 </body>
