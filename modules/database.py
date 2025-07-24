@@ -1047,7 +1047,7 @@ def get_user_last_remark(user_id):
         # 获取今天的日期，格式为YYYY-MM-DD
         today = datetime.now(CN_TIMEZONE).strftime("%Y-%m-%d")
         
-        # 根据数据库类型选择不同查询语句
+        
         query = """
             SELECT remark FROM orders 
             WHERE user_id = %s 
@@ -1088,3 +1088,26 @@ def is_pure_number(text):
     
     # 检查是否为纯数字
     return text.isdigit()
+
+def check_db_connection():
+    """检查PostgreSQL数据库连接是否正常"""
+    try:
+        url = urlparse(DATABASE_URL)
+        dbname = url.path[1:]
+        user = url.username
+        password = url.password
+        host = url.hostname
+        port = url.port
+        conn = psycopg2.connect(
+            dbname=dbname,
+            user=user,
+            password=password,
+            host=host,
+            port=port
+        )
+        conn.close()
+        logger.info("数据库连接正常")
+        return True
+    except Exception as e:
+        logger.error(f"数据库连接失败: {str(e)}", exc_info=True)
+        return False
