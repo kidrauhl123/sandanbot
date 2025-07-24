@@ -497,13 +497,45 @@
   <a href="/" class="navbar-brand">Spotify充值系统</a>
   <div class="navbar-user">
     <div class="user-dropdown">
+      <!-- 在用户信息区显示余额 -->
       <div class="user-info">
         <div class="user-avatar">{{ username[0]|upper }}</div>
         <span class="user-name">{{ username }}</span>
+        <span class="balance-badge">余额：<span id="user-balance">{{ balance }}</span></span>
         {% if is_admin %}
           <span class="admin-badge">管理员</span>
         {% endif %}
       </div>
+
+      <!-- 余额明细入口 -->
+      <div style="margin: 10px 0 20px 0;">
+        <button class="btn btn-info btn-sm" onclick="showBalanceRecords()">查看余额明细</button>
+      </div>
+
+      <!-- 余额明细弹窗 -->
+      <div id="balance-modal" style="display:none; position:fixed; left:0; top:0; width:100vw; height:100vh; background:rgba(0,0,0,0.3); z-index:9999; align-items:center; justify-content:center;">
+        <div style="background:#fff; border-radius:10px; max-width:600px; margin:60px auto; padding:30px; position:relative;">
+          <h3 style="margin-top:0;">余额明细</h3>
+          <button onclick="document.getElementById('balance-modal').style.display='none'" style="position:absolute; right:20px; top:20px; background:none; border:none; font-size:22px;">&times;</button>
+          <div id="balance-records-table">加载中...</div>
+        </div>
+      </div>
+
+      <script>
+      function showBalanceRecords() {
+        document.getElementById('balance-modal').style.display = 'flex';
+        fetch('/api/balance/records').then(r=>r.json()).then(res=>{
+          if(!res.success) { document.getElementById('balance-records-table').innerHTML = '加载失败'; return; }
+          let html = '<table class="transaction-table"><thead><tr><th>ID</th><th>时间</th><th>类型</th><th>金额</th><th>余额</th><th>说明</th></tr></thead><tbody>';
+          for(const rec of res.records) {
+            html += `<tr><td>${rec.id}</td><td>${rec.created_at}</td><td>${rec.type}</td><td style='color:${rec.amount>0?'#28a745':'#e74c3c'};'>${rec.amount>0?'+':''}${rec.amount}</td><td>${rec.balance_after}</td><td>${rec.reason||''}</td></tr>`;
+          }
+          html += '</tbody></table>';
+          document.getElementById('balance-records-table').innerHTML = html;
+        });
+      }
+      </script>
+
       <div class="dropdown-menu">
         <div class="dropdown-menu-header">账户信息</div>
         {% if balance is defined %}

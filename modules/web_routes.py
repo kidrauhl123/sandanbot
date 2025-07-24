@@ -24,9 +24,7 @@ from modules.database import (
     get_seller_today_confirmed_orders_by_user, get_admin_sellers,
     get_user_today_confirmed_count, get_all_today_confirmed_count, create_order_with_deduction_atomic,
     add_seller, check_all_sellers_full, delete_old_orders, get_today_valid_orders_count,
-    get_today_valid_orders_count_by_tg_logic, get_user_balance, get_user_credit_limit, 
-    update_user_balance, get_user_balance_records, get_default_prices, get_package_price,
-    get_user_custom_prices, set_user_custom_price, delete_user_custom_price
+    get_today_valid_orders_count_by_tg_logic, set_user_custom_price
 )
 import modules.constants as constants
 
@@ -277,24 +275,6 @@ def register_routes(app, notification_queue):
             user_id = session.get('user_id')
             username = session.get('username')
             
-            # 获取套餐价格
-            price = get_package_price(user_id, package)
-            if price <= 0:
-                logger.warning(f"订单提交失败: 无效的套餐价格 {price}")
-                return jsonify({
-                    "success": False,
-                    "error": f"无效的套餐价格: {price}"
-                }), 400
-            
-            # 检查用户余额
-            current_balance = get_user_balance(user_id)
-            if current_balance < price:
-                logger.warning(f"订单提交失败: 余额不足，用户={username}, 余额={current_balance}, 需要={price}")
-                return jsonify({
-                    "success": False,
-                    "error": f"余额不足，当前余额: {current_balance}，需要: {price}"
-                }), 400
-            
             # 检查是否所有卖家都已达到最大接单量
             if check_all_sellers_full():
                 logger.warning("订单提交失败: 所有卖家都已达到最大接单量")
@@ -307,14 +287,12 @@ def register_routes(app, notification_queue):
             try:
                 result = create_order_with_deduction_atomic(account, password, package, remark, username, user_id)
                 if isinstance(result, tuple):
-                    success, message, order_id, deducted_amount = result
+                    success, message = result[0], result[1]
                 else:
                     success, message = result, ''
-                    order_id, deducted_amount = None, None
             except Exception as e:
                 success = False
                 message = str(e)
-                order_id, deducted_amount = None, None
             
             if not success:
                 logger.warning(f"订单创建失败: {message} (用户={username})")
@@ -323,15 +301,15 @@ def register_routes(app, notification_queue):
                     "error": message
                 }), 400
 
-            logger.info(f"订单提交成功: 用户={username}, 套餐={package}, 价格={price}, 扣除金额={deducted_amount}")
+            logger.info(f"订单提交成功: 用户={username}, 套餐={package}")
             
             # 获取最新订单列表并格式化
             orders_raw = execute_query("SELECT id, account, password, package, status, created_at FROM orders ORDER BY id DESC LIMIT 5", fetch=True)
             orders = []
             
             # 获取新创建的订单ID
-            new_order_id = order_id if order_id else None
-            if not new_order_id and orders_raw and len(orders_raw) > 0:
+            new_order_id = None
+            if orders_raw and len(orders_raw) > 0:
                 new_order_id = orders_raw[0][0]
                 logger.info(f"新创建的订单ID: {new_order_id}")
                 print(f"DEBUG: 新创建的订单ID: {new_order_id}")
@@ -379,9 +357,7 @@ def register_routes(app, notification_queue):
             
             return jsonify({
                 "success": True,
-                "message": f'订单已提交成功！扣除金额: {deducted_amount}',
-                "price": price,
-                "deducted_amount": deducted_amount
+                "message": '订单已提交成功！'
             })
             
         except Exception as e:
@@ -816,13 +792,8 @@ def register_routes(app, notification_queue):
                 WHERE web_user_id = ? AND created_at LIKE ? AND status = 'completed'
             """, (username, today), fetch=True)
             
-            # 计算总消费额
+            # 计算总消费额（功能已移除，设置为0）
             today_consumption = 0
-            if today_orders:
-                for order in today_orders:
-                    package = order[0]
-                    price = get_package_price(user_id, package)
-                    today_consumption += price
             
             user_data.append({
                 "id": user_id,
@@ -830,8 +801,8 @@ def register_routes(app, notification_queue):
                 "is_admin": bool(user[2]),
                 "created_at": user[3],
                 "last_login": user[4],
-                "balance": user[5] if len(user) > 5 and user[5] is not None else 0.0,
-                "credit_limit": user[6] if len(user) > 6 and user[6] is not None else 0.0,
+                "balance": user[5] if len(user) > 5 else 0,
+                "credit_limit": user[6] if len(user) > 6 else 0,
                 "today_consumption": today_consumption
             })
         
@@ -842,200 +813,54 @@ def register_routes(app, notification_queue):
     @login_required
     @admin_required
     def admin_update_user_balance(user_id):
-        """设置用户余额"""
+        data = request.json
+        amount = float(data.get('amount', 0))
+        reason = data.get('reason', '') or ('管理员手动充值' if amount > 0 else '管理员手动扣款')
+        if amount == 0:
+            return jsonify({"success": False, "error": "金额不能为0"})
+        # 原子更新余额并写入明细
         try:
-            data = request.get_json()
-            amount = data.get('amount')
-            reason = data.get('reason', '管理员调整余额')
-            
-            if amount is None:
-                return jsonify({"success": False, "error": "金额不能为空"}), 400
-            
-            try:
-                amount = float(amount)
-            except (ValueError, TypeError):
-                return jsonify({"success": False, "error": "金额必须是有效的数字"}), 400
-            
-            # 更新用户余额
-            success, result = update_user_balance(user_id, amount, reason)
-            
-            if success:
-                return jsonify({
-                    "success": True,
-                    "message": f"余额更新成功，新余额: {result}",
-                    "new_balance": result
-                })
+            if DATABASE_URL.startswith('postgres'):
+                import psycopg2
+                conn = psycopg2.connect(DATABASE_URL)
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT balance FROM users WHERE id = %s FOR UPDATE", (user_id,))
+                        cur.execute("UPDATE users SET balance = balance + %s WHERE id = %s", (amount, user_id))
+                        cur.execute("SELECT balance FROM users WHERE id = %s", (user_id,))
+                        new_balance = cur.fetchone()[0]
+                        cur.execute("INSERT INTO balance_records (user_id, amount, type, reason, reference_id, balance_after, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)", (user_id, amount, 'recharge' if amount > 0 else 'manual_deduct', reason, None, new_balance, get_china_time()))
+                conn.close()
             else:
-                return jsonify({"success": False, "error": result}), 400
+                import sqlite3
+                db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "orders.db")
+                conn = sqlite3.connect(db_path)
+                cur = conn.cursor()
+                cur.execute("BEGIN IMMEDIATE")
+                cur.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (amount, user_id))
+                cur.execute("SELECT balance FROM users WHERE id = ?", (user_id,))
+                new_balance = cur.fetchone()[0]
+                cur.execute("INSERT INTO balance_records (user_id, amount, type, reason, reference_id, balance_after, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", (user_id, amount, 'recharge' if amount > 0 else 'manual_deduct', reason, None, new_balance, get_china_time()))
+                conn.commit()
+                conn.close()
+            return jsonify({"success": True})
         except Exception as e:
-            logger.error(f"更新用户余额失败: {str(e)}", exc_info=True)
-            return jsonify({"success": False, "error": str(e)}), 500
+            logger.error(f"管理员修改余额失败: {str(e)}", exc_info=True)
+            return jsonify({"success": False, "error": str(e)})
 
     # 删除透支额度更新API
     @app.route('/admin/api/users/<int:user_id>/credit', methods=['POST'])
     @login_required
     @admin_required
     def admin_update_user_credit(user_id):
-        """设置用户透支额度"""
-        try:
-            data = request.get_json()
-            credit_limit = data.get('credit_limit')
+        """设置用户透支额度（为保持兼容性而添加）"""
+        return jsonify({
+            "success": True
+        })
             
-            if credit_limit is None:
-                return jsonify({"success": False, "error": "透支额度不能为空"}), 400
-            
-            try:
-                credit_limit = float(credit_limit)
-                if credit_limit < 0:
-                    return jsonify({"success": False, "error": "透支额度不能为负数"}), 400
-            except (ValueError, TypeError):
-                return jsonify({"success": False, "error": "透支额度必须是有效的数字"}), 400
-            
-            # 更新用户透支额度
-            if DATABASE_URL.startswith('postgres'):
-                execute_query("UPDATE users SET credit_limit = %s WHERE id = %s", (credit_limit, user_id))
-            else:
-                execute_query("UPDATE users SET credit_limit = ? WHERE id = ?", (credit_limit, user_id))
-            
-            return jsonify({
-                "success": True,
-                "message": f"透支额度更新成功: {credit_limit}",
-                "credit_limit": credit_limit
-            })
-        except Exception as e:
-            logger.error(f"更新用户透支额度失败: {str(e)}", exc_info=True)
-            return jsonify({"success": False, "error": str(e)}), 500
-
     # 删除用户定制价格获取API
-    @app.route('/admin/api/users/<int:user_id>/prices')
-    @login_required
-    @admin_required
-    def admin_get_user_prices(user_id):
-        """获取用户定制价格"""
-        try:
-            custom_prices = get_user_custom_prices(user_id)
-            default_prices = get_default_prices()
-            
-            # 合并价格信息
-            prices = {}
-            for package in ['1', '3', '6', '12']:
-                if package in custom_prices:
-                    prices[package] = {
-                        "price": custom_prices[package],
-                        "is_custom": True
-                    }
-                else:
-                    prices[package] = {
-                        "price": default_prices.get(package, 0.0),
-                        "is_custom": False
-                    }
-            
-            return jsonify({
-                "success": True,
-                "prices": prices,
-                "default_prices": default_prices
-            })
-        except Exception as e:
-            logger.error(f"获取用户价格失败: {str(e)}", exc_info=True)
-            return jsonify({"success": False, "error": str(e)}), 500
             
     # 删除用户定制价格设置API
-    @app.route('/admin/api/users/<int:user_id>/prices', methods=['POST'])
-    @login_required
-    @admin_required
-    def admin_set_user_prices(user_id):
-        """设置用户定制价格"""
-        try:
-            data = request.get_json()
-            package = data.get('package')
-            price = data.get('price')
-            
-            if not package or price is None:
-                return jsonify({"success": False, "error": "套餐和价格不能为空"}), 400
-            
-            try:
-                price = float(price)
-                if price < 0:
-                    return jsonify({"success": False, "error": "价格不能为负数"}), 400
-            except (ValueError, TypeError):
-                return jsonify({"success": False, "error": "价格必须是有效的数字"}), 400
-            
-            # 设置用户定制价格
-            admin_id = session.get('user_id')
-            success = set_user_custom_price(user_id, package, price, admin_id)
-            
-            if success:
-                return jsonify({
-                    "success": True,
-                    "message": f"套餐{package}个月价格设置成功: {price}"
-                })
-            else:
-                return jsonify({"success": False, "error": "设置价格失败"}), 500
-        except Exception as e:
-            logger.error(f"设置用户价格失败: {str(e)}", exc_info=True)
-            return jsonify({"success": False, "error": str(e)}), 500
-
-    @app.route('/admin/api/users/<int:user_id>/prices/<package>', methods=['DELETE'])
-    @login_required
-    @admin_required
-    def admin_delete_user_price(user_id, package):
-        """删除用户定制价格"""
-        try:
-            success = delete_user_custom_price(user_id, package)
-            
-            if success:
-                return jsonify({
-                    "success": True,
-                    "message": f"套餐{package}个月定制价格已删除"
-                })
-            else:
-                return jsonify({"success": False, "error": "删除价格失败"}), 500
-        except Exception as e:
-            logger.error(f"删除用户价格失败: {str(e)}", exc_info=True)
-            return jsonify({"success": False, "error": str(e)}), 500
-
-    @app.route('/admin/api/default-prices', methods=['GET'])
-    @login_required
-    @admin_required
-    def admin_get_default_prices():
-        """获取默认价格配置"""
-        try:
-            default_prices = get_default_prices()
-            return jsonify({
-                "success": True,
-                "prices": default_prices
-            })
-        except Exception as e:
-            logger.error(f"获取默认价格失败: {str(e)}", exc_info=True)
-            return jsonify({"success": False, "error": str(e)}), 500
-
-    @app.route('/admin/api/users/<int:user_id>/balance-records')
-    @login_required
-    @admin_required
-    def admin_get_user_balance_records(user_id):
-        """获取用户余额变动记录（管理员查看）"""
-        try:
-            records = get_user_balance_records(user_id, 100)
-            
-            formatted_records = []
-            for record in records:
-                amount, type_name, reason, reference_id, balance_after, created_at = record
-                formatted_records.append({
-                    "amount": amount,
-                    "type": type_name,
-                    "reason": reason,
-                    "reference_id": reference_id,
-                    "balance_after": balance_after,
-                    "created_at": created_at
-                })
-            
-            return jsonify({
-                "success": True,
-                "records": formatted_records
-            })
-        except Exception as e:
-            logger.error(f"获取用户余额记录失败: {str(e)}", exc_info=True)
-            return jsonify({"success": False, "error": str(e)}), 500
 
     @app.route('/admin/api/orders')
     @login_required
@@ -1548,80 +1373,26 @@ def register_routes(app, notification_queue):
     @app.route('/api/balance/records')
     @login_required
     def api_balance_records():
-        """获取余额明细记录"""
-        try:
-            user_id = session.get('user_id')
-            records = get_user_balance_records(user_id, 50)
-            
-            formatted_records = []
-            for record in records:
-                amount, type_name, reason, reference_id, balance_after, created_at = record
-                formatted_records.append({
-                    "amount": amount,
-                    "type": type_name,
-                    "reason": reason,
-                    "reference_id": reference_id,
-                    "balance_after": balance_after,
-                    "created_at": created_at
-                })
-            
-            return jsonify({
-                "success": True,
-                "records": formatted_records
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({"success": False, "error": "未登录"})
+        # 查询余额明细
+        if DATABASE_URL.startswith('postgres'):
+            records = execute_query("SELECT id, amount, type, reason, reference_id, balance_after, created_at FROM balance_records WHERE user_id = %s ORDER BY id DESC LIMIT 100", (user_id,), fetch=True)
+        else:
+            records = execute_query("SELECT id, amount, type, reason, reference_id, balance_after, created_at FROM balance_records WHERE user_id = ? ORDER BY id DESC LIMIT 100", (user_id,), fetch=True)
+        result = []
+        for r in records:
+            result.append({
+                "id": r[0],
+                "amount": r[1],
+                "type": r[2],
+                "reason": r[3],
+                "reference_id": r[4],
+                "balance_after": r[5],
+                "created_at": r[6],
             })
-        except Exception as e:
-            logger.error(f"获取余额记录失败: {str(e)}", exc_info=True)
-            return jsonify({"success": False, "error": str(e)}), 500
-
-    @app.route('/api/balance/info')
-    @login_required
-    def api_balance_info():
-        """获取用户余额信息"""
-        try:
-            user_id = session.get('user_id')
-            balance = get_user_balance(user_id)
-            credit_limit = get_user_credit_limit(user_id)
-            
-            return jsonify({
-                "success": True,
-                "balance": balance,
-                "credit_limit": credit_limit
-            })
-        except Exception as e:
-            logger.error(f"获取余额信息失败: {str(e)}", exc_info=True)
-            return jsonify({"success": False, "error": str(e)}), 500
-
-    @app.route('/api/prices')
-    @login_required
-    def api_prices():
-        """获取价格信息"""
-        try:
-            user_id = session.get('user_id')
-            default_prices = get_default_prices()
-            custom_prices = get_user_custom_prices(user_id)
-            
-            # 合并价格信息
-            prices = {}
-            for package in ['1', '3', '6', '12']:
-                if package in custom_prices:
-                    prices[package] = {
-                        "price": custom_prices[package],
-                        "is_custom": True
-                    }
-                else:
-                    prices[package] = {
-                        "price": default_prices.get(package, 0.0),
-                        "is_custom": False
-                    }
-            
-            return jsonify({
-                "success": True,
-                "prices": prices,
-                "default_prices": default_prices
-            })
-        except Exception as e:
-            logger.error(f"获取价格信息失败: {str(e)}", exc_info=True)
-            return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": True, "records": result})
         
     @app.route('/api/active-sellers')
     @login_required
@@ -2242,6 +2013,35 @@ def register_routes(app, notification_queue):
         except Exception as e:
             logger.error(f"获取快速订单数据失败: {str(e)}", exc_info=True)
             return jsonify({"success": False, "error": "服务器内部错误"}), 500
+
+    # 设置全局套餐价格
+    @app.route('/admin/api/global_price', methods=['POST'])
+    @login_required
+    @admin_required
+    def admin_set_global_price():
+        data = request.json
+        package = data.get('package')
+        price = float(data.get('price', 0))
+        if not package:
+            return jsonify({"success": False, "error": "套餐不能为空"})
+        # 修改全局价格
+        from modules.constants import WEB_PRICES
+        WEB_PRICES[package] = price
+        # TODO: 持久化到配置文件或数据库（如有需要）
+        return jsonify({"success": True})
+
+    # 设置用户特定价格
+    @app.route('/admin/api/user_price', methods=['POST'])
+    @login_required
+    @admin_required
+    def admin_set_user_price():
+        data = request.json
+        user_id = int(data.get('user_id'))
+        package = data.get('package')
+        price = float(data.get('price', 0))
+        admin_id = session.get('user_id')
+        ok = set_user_custom_price(user_id, package, price, admin_id)
+        return jsonify({"success": ok})
 
 def ensure_orders_columns():
     """确保orders表包含所有必需的列，比如buyer_confirmed_at"""
