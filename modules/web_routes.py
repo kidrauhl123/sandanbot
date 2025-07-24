@@ -3,9 +3,9 @@ import logging
 from functools import wraps
 from datetime import datetime
 from flask import request, render_template, jsonify, session, redirect, url_for, send_from_directory
-from modules.constants import STATUS, STATUS_TEXT_ZH, DATABASE_URL, CONFIRM_STATUS, CONFIRM_STATUS_TEXT_ZH
+from modules.constants import STATUS, DATABASE_URL
 from modules.database import (
-    execute_query, hash_password, get_all_sellers, get_active_sellers, toggle_seller_status, 
+    execute_query, hash_password, get_all_sellers, toggle_seller_status, 
     remove_seller, update_seller_nickname, create_order_with_deduction_atomic,
     add_seller
 )
@@ -30,13 +30,13 @@ def register_routes(app):
             if not username or not password:
                 return render_template('login.html', error='请填写用户名和密码')
             hashed_password = hash_password(password)
-            user = execute_query("SELECT id, username, is_admin FROM users WHERE username=? AND password_hash=?", (username, hashed_password), fetch=True)
+            user = execute_query("SELECT id, username, is_admin FROM users WHERE username=%s AND password_hash=%s", (username, hashed_password), fetch=True)
             if user:
                 user_id, username, is_admin = user[0]
                 session['user_id'] = user_id
                 session['username'] = username
                 session['is_admin'] = is_admin
-                execute_query("UPDATE users SET last_login=? WHERE id=?", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id))
+                execute_query("UPDATE users SET last_login=%s WHERE id=%s", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id))
                 return redirect(url_for('index'))
             else:
                 return render_template('login.html', error='用户名或密码错误')
@@ -52,13 +52,13 @@ def register_routes(app):
                 return render_template('register.html', error='请填写所有字段')
             if password != confirm_password:
                 return render_template('register.html', error='两次密码输入不一致')
-            existing_user = execute_query("SELECT id FROM users WHERE username=?", (username,), fetch=True)
+            existing_user = execute_query("SELECT id FROM users WHERE username=%s", (username,), fetch=True)
             if existing_user:
                 return render_template('register.html', error='用户名已存在')
             hashed_password = hash_password(password)
             execute_query("""
                 INSERT INTO users (username, password_hash, is_admin, created_at) 
-                VALUES (?, ?, 0, ?)
+                VALUES (%s, %s, 0, %s)
             """, (username, hashed_password, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             return redirect(url_for('login'))
         return render_template('register.html')
@@ -84,13 +84,16 @@ def register_routes(app):
             qr_code = request.files['qr_code']
         else:
             return jsonify({"success": False, "error": "请上传二维码图片"}), 400
-        import uuid, imghdr, shutil
+        
+        import uuid, imghdr, shutil, os
+        try:
             temp_path = os.path.join('static', 'temp_upload.png')
             qr_code.save(temp_path)
             img_type = imghdr.what(temp_path)
             if not img_type:
-            os.remove(temp_path)
+                os.remove(temp_path)
                 return jsonify({"success": False, "error": "请上传有效的图片文件"}), 400
+            
             file_ext = f".{img_type}" if img_type else ".png"
             unique_filename = f"{uuid.uuid4().hex}{file_ext}"
             timestamp = datetime.now().strftime("%Y%m%d")
@@ -100,45 +103,53 @@ def register_routes(app):
             file_path = os.path.join(save_path, unique_filename)
             shutil.copy2(temp_path, file_path)
             os.chmod(file_path, 0o644)
-        if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+            os.remove(temp_path)
+            
+            if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
                 return jsonify({"success": False, "error": "图片保存失败，请重试"}), 500
-        account = file_path
-        password = ""
-        package = request.form.get('package', '12')
-        remark = request.form.get('remark', '')
+            
+            account = file_path
+            password = ""
+            package = request.form.get('package', '12')
+            remark = request.form.get('remark', '')
             user_id = session.get('user_id')
             username = session.get('username')
-                result = create_order_with_deduction_atomic(account, password, package, remark, username, user_id)
-                if isinstance(result, tuple):
-                    success, message = result[0], result[1]
-                else:
-                    success, message = result, ''
+            
+            result = create_order_with_deduction_atomic(account, password, package, remark, username, user_id)
+            if isinstance(result, tuple):
+                success, message = result[0], result[1]
+            else:
+                success, message = result, ''
+            
             if not success:
-            return jsonify({"success": False, "error": message}), 400
-        return jsonify({"success": True, "message": '订单已提交成功！'})
+                return jsonify({"success": False, "error": message}), 400
+            
+            return jsonify({"success": True, "message": '订单已提交成功！'})
+        except Exception as e:
+            return jsonify({"success": False, "error": f"处理图片时出错: {str(e)}"}), 500
 
     @app.route('/orders/recent')
     @login_required
     def orders_recent():
-            is_admin = session.get('is_admin')
-            user_id = session.get('user_id')
-                if is_admin:
+        is_admin = session.get('is_admin')
+        user_id = session.get('user_id')
+        if is_admin:
             orders = execute_query("SELECT id, account, package, status, created_at FROM orders ORDER BY id DESC LIMIT 50", fetch=True)
-                else:
-            orders = execute_query("SELECT id, account, package, status, created_at FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT 50", (user_id,), fetch=True)
+        else:
+            orders = execute_query("SELECT id, account, package, status, created_at FROM orders WHERE user_id = %s ORDER BY id DESC LIMIT 50", (user_id,), fetch=True)
         return jsonify({"success": True, "orders": orders})
 
     @app.route('/orders/confirm/<int:oid>', methods=['POST'])
     @login_required
     def confirm_order(oid):
         user_id = session.get('user_id')
-        order = execute_query("SELECT status, user_id FROM orders WHERE id=?", (oid,), fetch=True)
+        order = execute_query("SELECT status, user_id FROM orders WHERE id=%s", (oid,), fetch=True)
         if not order:
             return jsonify({"error": "订单不存在"}), 404
         status, order_user_id = order[0]
         if order_user_id != user_id and not session.get('is_admin'):
             return jsonify({"error": "您无权确认该订单"}), 403
-        execute_query("UPDATE orders SET status=?, completed_at=? WHERE id=?", (STATUS['COMPLETED'], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), oid))
+        execute_query("UPDATE orders SET status=%s, completed_at=%s WHERE id=%s", (STATUS['COMPLETED'], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), oid))
         return jsonify({"success": True})
 
     # 后台管理：订单和卖家管理
