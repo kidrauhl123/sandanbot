@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # 导入自定义模块
 from modules.database import init_db, check_db_connection
 from modules.telegram_bot import run_bot, process_telegram_update
+from modules.web_routes import register_routes
 
 # ===== Flask 应用 =====
 app = Flask(__name__)

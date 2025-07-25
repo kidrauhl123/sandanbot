@@ -9,25 +9,29 @@ from modules.constants import DATABASE_URL, STATUS
 logger = logging.getLogger(__name__)
 
 def execute_query(query, params=(), fetch=False, return_cursor=False):
-    url = urlparse(DATABASE_URL)
-    dbname = url.path[1:]
-    user = url.username
-    password = url.password
-    host = url.hostname
-    port = url.port
-    conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
-    cursor = conn.cursor()
-    query = query.replace('?', '%s')
-    cursor.execute(query, params)
-    if return_cursor:
+    try:
+        url = urlparse(DATABASE_URL)
+        dbname = url.path[1:]
+        user = url.username
+        password = url.password
+        host = url.hostname
+        port = url.port
+        conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
+        cursor = conn.cursor()
+        query = query.replace('?', '%s')
+        cursor.execute(query, params)
+        if return_cursor:
+            conn.commit()
+            return cursor
+        result = None
+        if fetch:
+            result = cursor.fetchall()
         conn.commit()
-        return cursor
-    result = None
-    if fetch:
-        result = cursor.fetchall()
-    conn.commit()
-    conn.close()
-    return result
+        conn.close()
+        return result
+    except Exception as e:
+        logger.error(f"数据库查询失败: {str(e)}")
+        raise e
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
