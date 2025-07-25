@@ -1398,16 +1398,16 @@
   <div class="navbar-user">
     <div class="user-dropdown">
       <div class="user-info">
-        <div class="user-avatar">{{ session.username[0]|upper }}</div>
-        <span class="user-name">{{ session.username }}</span>
-        {% if session.is_admin %}
+        <div class="user-avatar">{{ session['username'][0]|upper if session.get('username') else 'U' }}</div>
+        <span class="user-name">{{ session.get('username', '未登录') }}</span>
+        {% if session.get('is_admin') %}
           <span class="admin-badge">管理员</span>
         {% endif %}
       </div>
       <div class="dropdown-menu">
         <div class="dropdown-menu-header">账户信息</div>
         <div class="dropdown-divider"></div>
-        {% if session.is_admin %}
+        {% if session.get('is_admin') %}
           <a href="/admin" class="dropdown-menu-item">
             <i class="fas fa-cog"></i>管理后台
           </a>
@@ -1546,13 +1546,13 @@
         <div class="right">
             <div class="card">
                 <div class="card-header">
-                  <h2>{% if session.is_admin %}今日订单{% else %}今日订单{% endif %}</h2>
+                  <h2>{% if session.get('is_admin') %}今日订单{% else %}今日订单{% endif %}</h2>
                   <div class="header-actions">
                     <div class="view-toggle">
                       <button id="gridViewBtn" class="view-btn" title="网格视图"><i class="fas fa-th"></i></button>
                       <button id="tableViewBtn" class="view-btn active" title="表格视图"><i class="fas fa-list"></i></button>
                     </div>
-                    {% if session.is_admin %}
+                    {% if session.get('is_admin') %}
                     <button id="batchDeleteBtn" class="btn btn-danger btn-sm" style="margin-left: 10px; display: none;"><i class="fas fa-trash"></i> 批量删除</button>
                     {% endif %}
                   </div>
@@ -1717,8 +1717,8 @@
   let allOrders = []; // 存储所有订单
   let searchKeyword = ''; // 搜索关键词
   let autoRefreshInterval = null;
-  let userId = '{{ session.user_id }}'; // 当前用户ID
-  let isAdmin = {{ 'true' if session.is_admin else 'false' }}; // 是否是管理员
+  let userId = '{{ session.get("user_id", "") }}'; // 当前用户ID
+  let isAdmin = {{ 'true' if session.get('is_admin') else 'false' }}; // 是否是管理员
   let lastOrdersHash = ''; // 用于检测订单变化的哈希
   let viewMode = 'table'; // 默认视图模式：grid 或 table
   let page = 1; // 当前页码
