@@ -129,9 +129,12 @@ def check_db_connection():
 def init_db():
     """初始化数据库表"""
     try:
+        # 检查users表是否存在，如果存在则删除重建
+        execute_query("DROP TABLE IF EXISTS users CASCADE")
+        
         # 创建用户表
         execute_query("""
-            CREATE TABLE IF NOT EXISTS users (
+            CREATE TABLE users (
                 id SERIAL PRIMARY KEY,
                 username VARCHAR(50) UNIQUE NOT NULL,
                 password VARCHAR(255) NOT NULL,
@@ -175,12 +178,11 @@ def init_db():
             )
         """)
         
-        # 创建默认管理员用户（如果不存在）
-        admin_password = hash_password('admin123')
+        # 创建默认管理员用户
+        admin_password = hash_password('z755439')
         execute_query("""
             INSERT INTO users (username, password, email, role) 
-            VALUES ('admin', %s, 'admin@example.com', 'admin') 
-            ON CONFLICT (username) DO NOTHING
+            VALUES ('admin', %s, 'admin@example.com', 'admin')
         """, (admin_password,))
         
         logger.info("数据库初始化完成")

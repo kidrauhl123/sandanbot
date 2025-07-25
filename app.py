@@ -78,12 +78,28 @@ def handle_exception(e):
 # ===== 主程序 =====
 if __name__ == "__main__":
     # 启动时检查数据库连接
-    check_db_connection()
-
-    # 初始化数据库
-    logger.info("正在初始化数据库...")
-    init_db()
-    logger.info("数据库初始化完成")
+    try:
+        check_db_connection()
+    except Exception as e:
+        logger.error(f"数据库连接检查失败: {str(e)}")
+        logger.error("请确保DATABASE_URL环境变量正确设置")
+    
+    # 运行数据库迁移
+    try:
+        logger.info("正在运行数据库迁移...")
+        from migrate_db import migrate_database
+        migrate_database()
+        logger.info("数据库迁移完成")
+    except Exception as e:
+        logger.error(f"数据库迁移失败: {str(e)}")
+        logger.error("尝试使用传统初始化方法...")
+        try:
+            logger.info("正在初始化数据库...")
+            init_db()
+            logger.info("数据库初始化完成")
+        except Exception as e2:
+            logger.error(f"数据库初始化失败: {str(e2)}")
+            logger.error("应用将继续启动，但数据库功能可能不可用")
     
     # 启动 Bot 线程
     logger.info("正在启动Telegram机器人...")

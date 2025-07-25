@@ -35,7 +35,7 @@ def create_user(username, password, email, role='user'):
     try:
         hashed_password = hash_password(password)
         execute_query(
-            "INSERT INTO users (username, password, email, role, created_at) VALUES (%s, %s, %s, %s, NOW())",
+            "INSERT INTO users (username, password, email, role) VALUES (%s, %s, %s, %s)",
             (username, hashed_password, email, role)
         )
         return True, "用户创建成功"
