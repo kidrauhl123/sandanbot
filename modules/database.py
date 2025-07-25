@@ -11,12 +11,31 @@ logger = logging.getLogger(__name__)
 def execute_query(query, params=(), fetch=False, return_cursor=False):
     try:
         url = urlparse(DATABASE_URL)
-        dbname = url.path[1:]
+        
+        # 检查是否是PostgreSQL URL
+        if url.scheme != 'postgresql' and url.scheme != 'postgres':
+            raise ValueError(f"不支持的数据库类型: {url.scheme}，请使用PostgreSQL")
+        
+        # 解析PostgreSQL连接参数
+        dbname = url.path[1:] if url.path else 'postgres'
         user = url.username
         password = url.password
-        host = url.hostname
-        port = url.port
-        conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
+        host = url.hostname or 'localhost'
+        port = url.port or 5432
+        
+        # 构建连接参数
+        conn_params = {
+            'dbname': dbname,
+            'user': user,
+            'password': password,
+            'host': host,
+            'port': port
+        }
+        
+        # 移除None值
+        conn_params = {k: v for k, v in conn_params.items() if v is not None}
+        
+        conn = psycopg2.connect(**conn_params)
         cursor = conn.cursor()
         query = query.replace('?', '%s')
         cursor.execute(query, params)

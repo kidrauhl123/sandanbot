@@ -4,7 +4,7 @@ import os
 BOT_TOKEN = os.environ.get('BOT_TOKEN', 'your-bot-token')
 
 # 数据库连接URL
-DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///orders.db')
+DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:password@localhost:5432/sandanbot')
 
 # 订单状态常量
 STATUS = {
