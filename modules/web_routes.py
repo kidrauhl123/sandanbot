@@ -224,8 +224,15 @@ def register_routes(app: Flask):
             
             # 检查用户是否登录
             user_id = session.get('user_id')
+            
             if not user_id:
-                return jsonify({'success': False, 'message': '请先登录'}), 401
+                # 未登录用户返回空列表，不报错
+                return jsonify({
+                    'success': True,
+                    'orders': [],
+                    'message': '请登录查看订单',
+                    'timestamp': datetime.now().timestamp()
+                })
             
             # 根据用户权限决定查询范围
             if session.get('role') == 'admin':
@@ -287,8 +294,26 @@ def register_routes(app: Flask):
             
             # 检查用户是否登录
             user_id = session.get('user_id')
+            
             if not user_id:
-                return jsonify({'success': False, 'message': '请先登录'}), 401
+                # 未登录用户看到全局统计（但不显示个人统计）
+                stats = execute_query("""
+                    SELECT 
+                        COUNT(*) as total_orders,
+                        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_orders,
+                        COUNT(CASE WHEN status = 'submitted' THEN 1 END) as pending_orders
+                    FROM orders 
+                    WHERE DATE(created_at) = %s
+                """, (today,), fetch=True)
+                
+                return jsonify({
+                    'success': True,
+                    'all_today_confirmed': stats[0][1] if stats else 0,
+                    'user_today_confirmed': 0,  # 未登录用户个人统计为0
+                    'total_orders': stats[0][0] if stats else 0,
+                    'pending_orders': stats[0][2] if stats else 0,
+                    'message': '请登录查看个人统计'
+                })
             
             # 获取今日订单统计
             if session.get('role') == 'admin':
@@ -316,7 +341,13 @@ def register_routes(app: Flask):
                 """, (today, user_id), fetch=True)
                 
                 user_today_confirmed = stats[0][1] if stats else 0
-                all_today_confirmed = user_today_confirmed
+                # 普通用户也能看到全局统计
+                global_stats = execute_query("""
+                    SELECT COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_orders
+                    FROM orders 
+                    WHERE DATE(created_at) = %s
+                """, (today,), fetch=True)
+                all_today_confirmed = global_stats[0][0] if global_stats else 0
             
             return jsonify({
                 'success': True,
