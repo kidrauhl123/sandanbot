@@ -134,8 +134,9 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 username VARCHAR(50) UNIQUE NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
-                is_admin BOOLEAN DEFAULT FALSE,
+                password VARCHAR(255) NOT NULL,
+                email VARCHAR(100),
+                role VARCHAR(20) DEFAULT 'user',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP
             )
@@ -177,8 +178,8 @@ def init_db():
         # 创建默认管理员用户（如果不存在）
         admin_password = hash_password('admin123')
         execute_query("""
-            INSERT INTO users (username, password_hash, is_admin) 
-            VALUES ('admin', %s, TRUE) 
+            INSERT INTO users (username, password, email, role) 
+            VALUES ('admin', %s, 'admin@example.com', 'admin') 
             ON CONFLICT (username) DO NOTHING
         """, (admin_password,))
         

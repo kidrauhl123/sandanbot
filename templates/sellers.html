@@ -50,7 +50,16 @@
 </head>
 <body>
     <div class="container">
-        <h1>卖家管理</h1>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h1>卖家管理</h1>
+            <div style="text-align: right;">
+                {% if user %}
+                    <p>欢迎，{{ user.username }} ({{ '管理员' if user.role == 'admin' else '用户' }})</p>
+                    <a href="{{ url_for('index') }}" style="margin-right: 10px;">返回首页</a>
+                    <a href="{{ url_for('logout') }}">退出登录</a>
+                {% endif %}
+            </div>
+        </div>
         <table>
             <thead>
                 <tr>

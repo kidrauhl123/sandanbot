@@ -33,6 +33,23 @@
       align-items: center;
       gap: 20px;
     }
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .user-role {
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      color: white;
+    }
+    .role-admin {
+      background-color: #dc3545;
+    }
+    .role-user {
+      background-color: #28a745;
+    }
     .btn {
       border: none;
       padding: 8px 16px;
@@ -196,11 +213,22 @@
   <div class="navbar">
     <div class="navbar-brand">破天充值系统</div>
     <div class="navbar-user">
-      <span>欢迎，{{ username }}</span>
-      {% if is_admin %}
-        <a href="/admin" class="btn btn-info">管理后台</a>
+      {% if user %}
+        <div class="user-info">
+          <span>欢迎，{{ user.username }}</span>
+          <span class="user-role role-{{ user.role }}">{{ '管理员' if user.role == 'admin' else '用户' }}</span>
+        </div>
+        <a href="{{ url_for('profile') }}" class="btn btn-info">个人资料</a>
+        {% if user.role == 'admin' %}
+          <a href="{{ url_for('admin') }}" class="btn btn-info">管理后台</a>
+          <a href="{{ url_for('sellers') }}" class="btn btn-info">卖家管理</a>
+        {% endif %}
+        <a href="{{ url_for('orders') }}" class="btn btn-info">订单管理</a>
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">退出</a>
+      {% else %}
+        <a href="{{ url_for('login') }}" class="btn btn-primary">登录</a>
+        <a href="{{ url_for('register') }}" class="btn btn-info">注册</a>
       {% endif %}
-      <a href="/logout" class="btn btn-danger">退出</a>
     </div>
   </div>
 
