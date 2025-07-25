@@ -58,12 +58,13 @@ def register_routes(app: Flask):
                     account = f"QR_{unique_filename}"
                 
                 # 获取用户信息
-                user = get_user_by_id(session['user_id'])
+                user_id = session.get('user_id')
+                user = get_user_by_id(user_id)
                 username = user['username'] if user else 'unknown'
                 
                 # 创建订单
                 success, message, _, _ = create_order_with_deduction_atomic(
-                    account, '', package, remark, username, session['user_id']
+                    account, '', package, remark, username, user_id
                 )
                 
                 if success:
@@ -77,8 +78,9 @@ def register_routes(app: Flask):
         
         # GET请求 - 显示主页
         user = None
-        if 'user_id' in session:
-            user = get_user_by_id(session['user_id'])
+        user_id = session.get('user_id')
+        if user_id:
+            user = get_user_by_id(user_id)
         return render_template('index.html', user=user)
     
     @app.route('/login', methods=['GET', 'POST'])
@@ -139,7 +141,7 @@ def register_routes(app: Flask):
     @login_required
     def orders():
         """订单管理页面 - 需要登录"""
-        user = get_user_by_id(session['user_id'])
+        user = get_user_by_id(session.get('user_id'))
         orders = execute_query(
             "SELECT id, account, package, status, created_at, remark, user_id FROM orders ORDER BY id DESC LIMIT 50",
             fetch=True
@@ -150,7 +152,7 @@ def register_routes(app: Flask):
     @admin_required
     def sellers():
         """卖家管理页面 - 需要管理员权限"""
-        user = get_user_by_id(session['user_id'])
+        user = get_user_by_id(session.get('user_id'))
         sellers = get_all_sellers()
         return render_template('sellers.html', sellers=sellers, user=user)
     
@@ -158,7 +160,7 @@ def register_routes(app: Flask):
     @admin_required
     def admin():
         """管理员面板 - 需要管理员权限"""
-        user = get_user_by_id(session['user_id'])
+        user = get_user_by_id(session.get('user_id'))
         users = get_all_users()
         return render_template('admin.html', users=users, user=user)
     
@@ -166,8 +168,16 @@ def register_routes(app: Flask):
     @login_required
     def profile():
         """用户个人资料页面"""
-        user = get_user_by_id(session['user_id'])
+        user = get_user_by_id(session.get('user_id'))
         return render_template('profile.html', user=user)
+    
+    @app.route('/dashboard')
+    @login_required
+    def dashboard():
+        """用户仪表板页面"""
+        user = get_user_by_id(session.get('user_id'))
+        # 可以重定向到个人资料页面或者创建一个新的dashboard页面
+        return redirect(url_for('profile'))
     
     # ==================== API路由 ====================
     
@@ -186,12 +196,13 @@ def register_routes(app: Flask):
                 return jsonify({'success': False, 'message': '账号和套餐不能为空'}), 400
             
             # 获取用户信息
-            user = get_user_by_id(session['user_id'])
+            user_id = session.get('user_id')
+            user = get_user_by_id(user_id)
             username = user['username'] if user else 'unknown'
             
             # 创建订单
             success, message, _, _ = create_order_with_deduction_atomic(
-                account, password, package, remark, username, session['user_id']
+                account, password, package, remark, username, user_id
             )
             
             if success:
@@ -210,6 +221,11 @@ def register_routes(app: Flask):
             limit = request.args.get('limit', 50, type=int)
             page = request.args.get('page', 1, type=int)
             offset = (page - 1) * limit
+            
+            # 检查用户是否登录
+            user_id = session.get('user_id')
+            if not user_id:
+                return jsonify({'success': False, 'message': '请先登录'}), 401
             
             # 根据用户权限决定查询范围
             if session.get('role') == 'admin':
@@ -232,7 +248,7 @@ def register_routes(app: Flask):
                     LEFT JOIN sellers s ON o.accepted_by = s.telegram_id::text
                     WHERE o.user_id = %s
                     ORDER BY o.id DESC LIMIT %s OFFSET %s
-                """, (session['user_id'], limit, offset), fetch=True)
+                """, (user_id, limit, offset), fetch=True)
             
             # 转换为字典格式
             orders_list = []
@@ -269,6 +285,11 @@ def register_routes(app: Flask):
         try:
             today = datetime.now().date()
             
+            # 检查用户是否登录
+            user_id = session.get('user_id')
+            if not user_id:
+                return jsonify({'success': False, 'message': '请先登录'}), 401
+            
             # 获取今日订单统计
             if session.get('role') == 'admin':
                 # 管理员看到所有统计
@@ -292,7 +313,7 @@ def register_routes(app: Flask):
                         COUNT(CASE WHEN status = 'submitted' THEN 1 END) as pending_orders
                     FROM orders 
                     WHERE DATE(created_at) = %s AND user_id = %s
-                """, (today, session['user_id']), fetch=True)
+                """, (today, user_id), fetch=True)
                 
                 user_today_confirmed = stats[0][1] if stats else 0
                 all_today_confirmed = user_today_confirmed
@@ -308,6 +329,122 @@ def register_routes(app: Flask):
         except Exception as e:
             logger.error(f"获取今日统计失败: {str(e)}")
             return jsonify({'success': False, 'message': '获取统计失败'}), 500
+    
+    @app.route('/api/all-sellers')
+    def get_all_sellers_api():
+        """获取所有卖家列表"""
+        try:
+            sellers = execute_query("""
+                SELECT telegram_id, nickname, username, first_name, is_active, last_active_at
+                FROM sellers 
+                ORDER BY added_at DESC
+            """, fetch=True)
+            
+            sellers_list = []
+            for seller in sellers:
+                display_name = seller[1] or seller[3] or f"Seller {seller[0]}"
+                sellers_list.append({
+                    'id': seller[0],
+                    'name': display_name,
+                    'username': seller[2],
+                    'is_active': seller[4],
+                    'last_active_at': seller[5].isoformat() if seller[5] else None
+                })
+            
+            return jsonify({
+                'success': True,
+                'sellers': sellers_list
+            })
+            
+        except Exception as e:
+            logger.error(f"获取所有卖家失败: {str(e)}")
+            return jsonify({'success': False, 'message': '获取卖家列表失败'}), 500
+    
+    @app.route('/api/participating-sellers')
+    def get_participating_sellers():
+        """获取参与分流的卖家列表"""
+        try:
+            sellers = execute_query("""
+                SELECT telegram_id, nickname, username, first_name, is_active, last_active_at
+                FROM sellers 
+                WHERE is_active = TRUE
+                ORDER BY last_active_at DESC NULLS LAST
+            """, fetch=True)
+            
+            sellers_list = []
+            for seller in sellers:
+                display_name = seller[1] or seller[3] or f"Seller {seller[0]}"
+                sellers_list.append({
+                    'id': seller[0],
+                    'name': display_name,
+                    'username': seller[2],
+                    'is_active': seller[4],
+                    'last_active_at': seller[5].isoformat() if seller[5] else None
+                })
+            
+            return jsonify({
+                'success': True,
+                'sellers': sellers_list
+            })
+            
+        except Exception as e:
+            logger.error(f"获取参与分流卖家失败: {str(e)}")
+            return jsonify({'success': False, 'message': '获取卖家列表失败'}), 500
+    
+    @app.route('/api/smart-remark', methods=['POST'])
+    def smart_remark():
+        """智能备注建议"""
+        try:
+            data = request.get_json()
+            remark = data.get('remark', '') if data else ''
+            
+            # 这里可以添加智能备注逻辑
+            # 目前返回简单的建议
+            suggestions = []
+            if not remark or len(remark.strip()) < 3:
+                suggestions = [
+                    "请确保账号信息正确",
+                    "充值后请及时确认",
+                    "如有问题请联系客服"
+                ]
+            
+            return jsonify({
+                'success': True,
+                'suggestions': suggestions,
+                'show_modal': len(suggestions) > 0
+            })
+            
+        except Exception as e:
+            logger.error(f"智能备注处理失败: {str(e)}")
+            return jsonify({'success': False, 'message': '处理失败'}), 500
+    
+    @app.route('/api/check-duplicate-remark', methods=['POST'])
+    def check_duplicate_remark():
+        """检查备注重复"""
+        try:
+            data = request.get_json()
+            remark = data.get('remark', '') if data else ''
+            
+            if not remark or len(remark.strip()) < 3:
+                return jsonify({'success': True, 'duplicate': False})
+            
+            # 检查今日是否有相同备注
+            today = datetime.now().date()
+            duplicates = execute_query("""
+                SELECT COUNT(*) FROM orders 
+                WHERE remark = %s AND DATE(created_at) = %s
+            """, (remark, today), fetch=True)
+            
+            is_duplicate = duplicates and duplicates[0][0] > 0
+            
+            return jsonify({
+                'success': True,
+                'duplicate': is_duplicate
+            })
+            
+        except Exception as e:
+            logger.error(f"检查备注重复失败: {str(e)}")
+            return jsonify({'success': False, 'message': '检查失败'}), 500
     
     @app.route('/api/active-sellers')
     def get_active_sellers():
@@ -518,7 +655,7 @@ def register_routes(app: Flask):
     @admin_required
     def admin_delete_user(user_id):
         """管理员删除用户"""
-        if user_id == session['user_id']:
+        if user_id == session.get('user_id'):
             return jsonify({'error': '不能删除自己的账户'}), 400
         
         success, message = delete_user(user_id)
@@ -544,18 +681,20 @@ def register_routes(app: Flask):
     @admin_required
     def delete_user_api(user_id):
         """删除用户API - 仅管理员"""
-        if user_id == session['user_id']:
+        if user_id == session.get('user_id'):
             return jsonify({'success': False, 'message': '不能删除自己的账户'}), 400
         
         success, message = delete_user(user_id)
-        return jsonify({'success': success, 'message': message})
+        return jsonify({'success': success, 'message': message}) 
     
     @app.route('/api/user-stats')
     @login_required
     def get_user_stats():
         """获取当前用户的订单统计"""
         try:
-            user_id = session['user_id']
+            user_id = session.get('user_id')
+            if not user_id:
+                return jsonify({'success': False, 'message': '请先登录'}), 401
             
             # 获取用户订单统计
             stats = execute_query("""

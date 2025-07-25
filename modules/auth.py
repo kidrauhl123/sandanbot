@@ -23,7 +23,8 @@ def admin_required(f):
             flash('请先登录', 'error')
             return redirect(url_for('login'))
         
-        if not is_admin(session['user_id']):
+        user_id = session.get('user_id')
+        if not user_id or not is_admin(user_id):
             flash('需要管理员权限', 'error')
             return redirect(url_for('index'))
         
