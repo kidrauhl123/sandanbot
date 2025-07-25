@@ -1,1 +1,790 @@
- 
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>卖家管理 - 优图充值系统</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        
+        .navbar {
+            background: rgba(255,255,255,0.9);
+            padding: 12px 20px;
+            box-shadow: 0 1px 8px rgba(0,0,0,0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+        }
+        
+        .navbar-brand {
+            font-size: 18px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .navbar-nav {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .navbar-nav a {
+            text-decoration: none;
+            color: #333;
+            font-weight: 500;
+            padding: 8px 15px;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        
+        .navbar-nav a:hover, .navbar-nav a.active {
+            background-color: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        
+        .card {
+            background: rgba(255,255,255,0.97);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+            backdrop-filter: blur(10px);
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .card-header h2 {
+            margin: 0;
+            font-weight: 600;
+            font-size: 20px;
+            color: #667eea;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .stat-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        
+        .stat-card p {
+            margin: 0;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .table th,
+        .table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #555;
+            position: sticky;
+            top: 0;
+        }
+        
+        .table tbody tr:hover {
+            background-color: #f8f9ff;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .status-active {
+            background-color: #e8f5e8;
+            color: #388e3c;
+        }
+        
+        .status-inactive {
+            background-color: #ffebee;
+            color: #d32f2f;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.3s ease;
+            margin: 2px;
+        }
+        
+        .btn-primary {
+            background-color: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #5a6fd6;
+            transform: translateY(-1px);
+        }
+        
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .btn-warning {
+            background-color: #ffc107;
+            color: #333;
+        }
+        
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        
+        .text-muted {
+            color: #6c757d;
+        }
+        
+        .filter-bar {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-bar select,
+        .filter-bar input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .filter-bar button {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .filter-bar button:hover {
+            background: #5a6fd6;
+        }
+        
+        .seller-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #667eea;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        .seller-info {
+            display: flex;
+            align-items: center;
+        }
+        
+        .seller-details {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .seller-name {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .seller-id {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 20px;
+            color: #ccc;
+        }
+        
+        .empty-state h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 10% auto;
+            padding: 30px;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 500px;
+            position: relative;
+        }
+        
+        .modal-header {
+            margin-bottom: 20px;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            color: #667eea;
+        }
+        
+        .close {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+        }
+        
+        .close:hover {
+            color: #333;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102,126,234,0.2);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <i class="fas fa-chart-line"></i> 优图充值系统
+        </div>
+        <div class="navbar-nav">
+            <a href="{{ url_for('index') }}"><i class="fas fa-home"></i> 首页</a>
+            <a href="{{ url_for('orders') }}"><i class="fas fa-list"></i> 订单管理</a>
+            <a href="{{ url_for('sellers') }}" class="active"><i class="fas fa-users"></i> 卖家管理</a>
+            <a href="{{ url_for('admin') }}"><i class="fas fa-cog"></i> 管理面板</a>
+            <a href="{{ url_for('profile') }}"><i class="fas fa-user"></i> 个人资料</a>
+            <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> 退出</a>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <!-- 统计卡片 -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3 id="total-sellers">{{ sellers|length if sellers else 0 }}</h3>
+                <p>总卖家数</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="active-sellers">
+                    {% set active_count = sellers|selectattr('5', 'equalto', true)|list|length if sellers else 0 %}
+                    {{ active_count }}
+                </h3>
+                <p>活跃卖家</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="online-sellers">0</h3>
+                <p>在线卖家</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="today-orders">0</h3>
+                <p>今日接单</p>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2><i class="fas fa-users"></i> 卖家列表</h2>
+                <button class="btn btn-primary" onclick="showAddSellerModal()">
+                    <i class="fas fa-plus"></i> 添加卖家
+                </button>
+            </div>
+            
+            <!-- 筛选栏 -->
+            <div class="filter-bar">
+                <select id="statusFilter">
+                    <option value="">全部状态</option>
+                    <option value="active">活跃</option>
+                    <option value="inactive">非活跃</option>
+                </select>
+                
+                <input type="text" id="searchFilter" placeholder="搜索卖家昵称或ID..." style="min-width: 200px;">
+                
+                <button onclick="applyFilters()">
+                    <i class="fas fa-filter"></i> 筛选
+                </button>
+                
+                <button onclick="resetFilters()">
+                    <i class="fas fa-undo"></i> 重置
+                </button>
+                
+                <button onclick="refreshSellers()" style="margin-left: auto;">
+                    <i class="fas fa-sync-alt"></i> 刷新
+                </button>
+            </div>
+            
+            {% if sellers %}
+            <div class="table-responsive">
+                <table class="table" id="sellersTable">
+                    <thead>
+                        <tr>
+                            <th>卖家信息</th>
+                            <th>Telegram ID</th>
+                            <th>用户名</th>
+                            <th>状态</th>
+                            <th>最后活跃</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sellersTableBody">
+                        {% for seller in sellers %}
+                        <tr data-seller-id="{{ seller[0] }}" data-status="{{ 'active' if seller[5] else 'inactive' }}">
+                            <td>
+                                <div class="seller-info">
+                                    <div class="seller-avatar">
+                                        {{ seller[2][0]|upper if seller[2] else seller[3][0]|upper if seller[3] else 'U' }}
+                                    </div>
+                                    <div class="seller-details">
+                                        <div class="seller-name">{{ seller[2] or seller[3] or '未知' }}</div>
+                                        <div class="seller-id">ID: {{ seller[0] }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td><code>{{ seller[0] }}</code></td>
+                            <td>{{ seller[4] or '-' }}</td>
+                            <td>
+                                <span class="status-badge status-{{ 'active' if seller[5] else 'inactive' }}">
+                                    {{ '活跃' if seller[5] else '非活跃' }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="text-muted">
+                                    {{ seller[6].strftime('%Y-%m-%d %H:%M') if seller[6] else '从未活跃' }}
+                                </span>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="editSeller('{{ seller[0] }}')">
+                                    <i class="fas fa-edit"></i> 编辑
+                                </button>
+                                {% if seller[5] %}
+                                <button class="btn btn-sm btn-warning" onclick="toggleSellerStatus('{{ seller[0] }}', false)">
+                                    <i class="fas fa-pause"></i> 禁用
+                                </button>
+                                {% else %}
+                                <button class="btn btn-sm btn-success" onclick="toggleSellerStatus('{{ seller[0] }}', true)">
+                                    <i class="fas fa-play"></i> 启用
+                                </button>
+                                {% endif %}
+                                <button class="btn btn-sm btn-danger" onclick="deleteSeller('{{ seller[0] }}')">
+                                    <i class="fas fa-trash"></i> 删除
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <i class="fas fa-users"></i>
+                <h3>暂无卖家</h3>
+                <p>系统中还没有任何卖家，请先添加卖家。</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- 添加/编辑卖家模态框 -->
+    <div id="sellerModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeSellerModal()">&times;</span>
+            <div class="modal-header">
+                <h3 id="modalTitle">添加卖家</h3>
+            </div>
+            <form id="sellerForm">
+                <div class="form-group">
+                    <label for="telegram_id">Telegram ID *</label>
+                    <input type="text" id="telegram_id" name="telegram_id" class="form-control" required>
+                    <small class="text-muted">卖家的Telegram用户ID（数字）</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="nickname">昵称</label>
+                    <input type="text" id="nickname" name="nickname" class="form-control">
+                    <small class="text-muted">卖家的显示昵称</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="username">用户名</label>
+                    <input type="text" id="username" name="username" class="form-control">
+                    <small class="text-muted">Telegram用户名（@username）</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="first_name">名字</label>
+                    <input type="text" id="first_name" name="first_name" class="form-control">
+                    <small class="text-muted">卖家的真实姓名</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="is_active" name="is_active" checked>
+                        启用该卖家
+                    </label>
+                </div>
+                
+                <div style="text-align: right; margin-top: 20px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeSellerModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        // 全局变量
+        let allSellers = [];
+        let filteredSellers = [];
+        let editingSellerTelegramId = null;
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSellers();
+            loadStats();
+        });
+        
+        // 加载卖家列表
+        async function loadSellers() {
+            try {
+                const response = await fetch('/api/sellers');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        allSellers = data.sellers;
+                        filteredSellers = [...allSellers];
+                        renderSellers();
+                    }
+                }
+            } catch (error) {
+                console.error('加载卖家列表失败:', error);
+            }
+        }
+        
+        // 加载统计数据
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/seller-stats');
+                if (response.ok) {
+                    const stats = await response.json();
+                    if (stats.success) {
+                        document.getElementById('total-sellers').textContent = stats.total_sellers || 0;
+                        document.getElementById('active-sellers').textContent = stats.active_sellers || 0;
+                        document.getElementById('online-sellers').textContent = stats.online_sellers || 0;
+                        document.getElementById('today-orders').textContent = stats.today_orders || 0;
+                    }
+                }
+            } catch (error) {
+                console.error('加载统计数据失败:', error);
+            }
+        }
+        
+        // 渲染卖家列表
+        function renderSellers() {
+            // 这里可以根据需要更新表格显示
+            console.log('当前显示的卖家数量:', filteredSellers.length);
+        }
+        
+        // 应用筛选
+        function applyFilters() {
+            const statusFilter = document.getElementById('statusFilter').value;
+            const searchFilter = document.getElementById('searchFilter').value.toLowerCase();
+            
+            const rows = document.querySelectorAll('#sellersTableBody tr');
+            
+            rows.forEach(row => {
+                const status = row.dataset.status;
+                const text = row.textContent.toLowerCase();
+                
+                let show = true;
+                
+                if (statusFilter && status !== statusFilter) {
+                    show = false;
+                }
+                
+                if (searchFilter && !text.includes(searchFilter)) {
+                    show = false;
+                }
+                
+                row.style.display = show ? '' : 'none';
+            });
+        }
+        
+        // 重置筛选
+        function resetFilters() {
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('searchFilter').value = '';
+            
+            const rows = document.querySelectorAll('#sellersTableBody tr');
+            rows.forEach(row => {
+                row.style.display = '';
+            });
+        }
+        
+        // 刷新卖家列表
+        function refreshSellers() {
+            loadSellers();
+            loadStats();
+        }
+        
+        // 显示添加卖家模态框
+        function showAddSellerModal() {
+            editingSellerTelegramId = null;
+            document.getElementById('modalTitle').textContent = '添加卖家';
+            document.getElementById('sellerForm').reset();
+            document.getElementById('is_active').checked = true;
+            document.getElementById('sellerModal').style.display = 'block';
+        }
+        
+        // 编辑卖家
+        async function editSeller(telegramId) {
+            try {
+                const response = await fetch(`/api/sellers/${telegramId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        const seller = data.seller;
+                        editingSellerTelegramId = telegramId;
+                        document.getElementById('modalTitle').textContent = '编辑卖家';
+                        document.getElementById('telegram_id').value = seller.telegram_id;
+                        document.getElementById('nickname').value = seller.nickname || '';
+                        document.getElementById('username').value = seller.username || '';
+                        document.getElementById('first_name').value = seller.first_name || '';
+                        document.getElementById('is_active').checked = seller.is_active;
+                        document.getElementById('sellerModal').style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                console.error('获取卖家信息失败:', error);
+            }
+        }
+        
+        // 切换卖家状态
+        async function toggleSellerStatus(telegramId, isActive) {
+            const action = isActive ? '启用' : '禁用';
+            if (!confirm(`确定要${action}该卖家吗？`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/sellers/${telegramId}/toggle`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ is_active: isActive })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.success) {
+                        alert(`卖家已${action}`);
+                        refreshSellers();
+                    } else {
+                        alert(`${action}失败: ${result.message}`);
+                    }
+                } else {
+                    alert(`${action}失败，请重试`);
+                }
+            } catch (error) {
+                console.error(`${action}卖家失败:`, error);
+                alert(`${action}失败，请重试`);
+            }
+        }
+        
+        // 删除卖家
+        async function deleteSeller(telegramId) {
+            if (!confirm('确定要删除该卖家吗？此操作无法撤销！')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/sellers/${telegramId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.success) {
+                        alert('卖家已删除');
+                        refreshSellers();
+                    } else {
+                        alert(`删除失败: ${result.message}`);
+                    }
+                } else {
+                    alert('删除失败，请重试');
+                }
+            } catch (error) {
+                console.error('删除卖家失败:', error);
+                alert('删除失败，请重试');
+            }
+        }
+        
+        // 关闭模态框
+        function closeSellerModal() {
+            document.getElementById('sellerModal').style.display = 'none';
+        }
+        
+        // 提交卖家表单
+        document.getElementById('sellerForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const data = {
+                telegram_id: formData.get('telegram_id'),
+                nickname: formData.get('nickname'),
+                username: formData.get('username'),
+                first_name: formData.get('first_name'),
+                is_active: formData.get('is_active') === 'on'
+            };
+            
+            const url = editingSellerTelegramId ? 
+                `/api/sellers/${editingSellerTelegramId}` : '/api/sellers';
+            const method = editingSellerTelegramId ? 'PUT' : 'POST';
+            
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.success) {
+                        alert(editingSellerTelegramId ? '卖家信息已更新' : '卖家已添加');
+                        closeSellerModal();
+                        refreshSellers();
+                    } else {
+                        alert(`操作失败: ${result.message}`);
+                    }
+                } else {
+                    alert('操作失败，请重试');
+                }
+            } catch (error) {
+                console.error('提交卖家信息失败:', error);
+                alert('操作失败，请重试');
+            }
+        });
+        
+        // 搜索框事件
+        document.getElementById('searchFilter').addEventListener('input', function() {
+            clearTimeout(this.searchTimeout);
+            this.searchTimeout = setTimeout(() => {
+                applyFilters();
+            }, 300);
+        });
+        
+        // 点击模态框外部关闭
+        document.getElementById('sellerModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeSellerModal();
+            }
+        });
+    </script>
+</body>
+</html> 
