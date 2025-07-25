@@ -114,6 +114,101 @@
       box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
     }
     
+    .upload-area {
+      border: 2px dashed #e1e5e9;
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: rgba(255,255,255,0.5);
+      position: relative;
+      min-height: 120px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .upload-area:hover {
+      border-color: #667eea;
+      background: rgba(102,126,234,0.05);
+    }
+    
+    .upload-area.drag-over {
+      border-color: #667eea;
+      background: rgba(102,126,234,0.1);
+      transform: scale(1.02);
+    }
+    
+    .upload-placeholder {
+      width: 100%;
+    }
+    
+    .upload-icon {
+      font-size: 40px;
+      margin-bottom: 10px;
+    }
+    
+    .upload-text {
+      font-size: 16px;
+      color: #333;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    
+    .upload-hint {
+      font-size: 12px;
+      color: #666;
+    }
+    
+    .upload-preview {
+      width: 100%;
+      position: relative;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    
+    .upload-preview img {
+      width: 100%;
+      max-height: 200px;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+    
+    .upload-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    
+    .upload-preview:hover .upload-overlay {
+      opacity: 1;
+    }
+    
+    .change-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.3s ease;
+    }
+    
+    .change-btn:hover {
+      background: #764ba2;
+      transform: translateY(-1px);
+    }
+    
     .submit-btn {
       width: 100%;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -233,13 +328,39 @@
   </div>
 
   <div class="main-container">
-    <!-- 上传付款码区域 -->
-    <div class="upload-section">
+    {% if not user %}
+      <!-- 未登录用户显示 -->
+      <div class="upload-section">
+        <h2>欢迎使用破天充值系统</h2>
+        <p style="text-align: center; color: #666; margin: 20px 0;">
+          请先登录或注册账户以使用充值服务
+        </p>
+        <div style="text-align: center;">
+          <a href="{{ url_for('login') }}" class="btn btn-primary" style="margin-right: 10px;">立即登录</a>
+          <a href="{{ url_for('register') }}" class="btn btn-info">注册账户</a>
+        </div>
+      </div>
+    {% else %}
+      <!-- 已登录用户显示上传功能 -->
+      <div class="upload-section">
       <h2>上传付款码</h2>
       <form id="uploadForm" enctype="multipart/form-data">
         <div class="form-group">
-          <label for="qr_code">付款码图片 *</label>
-          <input type="file" id="qr_code" name="qr_code" accept="image/*" required>
+          <label for="qr_code">付款码图片 * <span style="font-size: 12px; color: #666;">(点击上传框或Ctrl+V粘贴)</span></label>
+          <div class="upload-area" id="uploadArea">
+            <input type="file" id="qr_code" name="qr_code" accept="image/*" required style="display: none;">
+            <div class="upload-placeholder" id="uploadPlaceholder">
+              <div class="upload-icon">📷</div>
+              <div class="upload-text">点击此处上传图片或粘贴剪切板图片</div>
+              <div class="upload-hint">支持 JPG、PNG、GIF 格式</div>
+            </div>
+            <div class="upload-preview" id="uploadPreview" style="display: none;">
+              <img id="previewImage" src="" alt="预览图片">
+              <div class="upload-overlay">
+                <button type="button" class="change-btn" onclick="changeImage()">更换图片</button>
+              </div>
+            </div>
+          </div>
         </div>
         
         <div class="form-group">
@@ -261,16 +382,115 @@
       </form>
     </div>
 
-    <!-- 最近订单区域 -->
-    <div class="orders-section">
-      <h2>最近订单</h2>
-      <div id="ordersList">
-        <div class="loading">加载中...</div>
+      <!-- 最近订单区域 -->
+      <div class="orders-section">
+        <h2>最近订单</h2>
+        <div id="ordersList">
+          <div class="loading">加载中...</div>
+        </div>
       </div>
-    </div>
+    {% endif %}
   </div>
 
   <script>
+    // 图片上传相关功能
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('qr_code');
+    const uploadPlaceholder = document.getElementById('uploadPlaceholder');
+    const uploadPreview = document.getElementById('uploadPreview');
+    const previewImage = document.getElementById('previewImage');
+    
+    // 点击上传区域触发文件选择
+    uploadArea.addEventListener('click', function() {
+      fileInput.click();
+    });
+    
+    // 文件选择变化
+    fileInput.addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        handleFileUpload(file);
+      }
+    });
+    
+    // 拖拽上传
+    uploadArea.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      uploadArea.classList.add('drag-over');
+    });
+    
+    uploadArea.addEventListener('dragleave', function(e) {
+      e.preventDefault();
+      uploadArea.classList.remove('drag-over');
+    });
+    
+    uploadArea.addEventListener('drop', function(e) {
+      e.preventDefault();
+      uploadArea.classList.remove('drag-over');
+      
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        const file = files[0];
+        if (file.type.startsWith('image/')) {
+          handleFileUpload(file);
+          fileInput.files = files; // 更新input的files
+        } else {
+          showAlert('请选择图片文件！', 'error');
+        }
+      }
+    });
+    
+    // 剪切板粘贴功能
+    document.addEventListener('paste', function(e) {
+      const items = e.clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          handleFileUpload(file);
+          
+          // 创建一个新的FileList来更新input
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          fileInput.files = dt.files;
+          break;
+        }
+      }
+    });
+    
+    // 处理文件上传预览
+    function handleFileUpload(file) {
+      if (!file.type.startsWith('image/')) {
+        showAlert('请选择图片文件！', 'error');
+        return;
+      }
+      
+      // 检查文件大小 (5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        showAlert('图片文件不能超过5MB！', 'error');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        previewImage.src = e.target.result;
+        uploadPlaceholder.style.display = 'none';
+        uploadPreview.style.display = 'block';
+      };
+      reader.readAsDataURL(file);
+    }
+    
+    // 更换图片
+    function changeImage() {
+      fileInput.click();
+    }
+    
+    // 重置上传状态
+    function resetUpload() {
+      uploadPlaceholder.style.display = 'block';
+      uploadPreview.style.display = 'none';
+      fileInput.value = '';
+    }
+    
     // 提交订单
     document.getElementById('uploadForm').addEventListener('submit', async function(e) {
       e.preventDefault();
@@ -293,6 +513,7 @@
         if (result.success) {
           showAlert('订单提交成功！', 'success');
           this.reset();
+          resetUpload(); // 重置上传状态
           loadOrders();
         } else {
           showAlert(result.error || '提交失败', 'error');
@@ -322,6 +543,7 @@
     // 加载订单列表
     async function loadOrders() {
       const ordersList = document.getElementById('ordersList');
+      if (!ordersList) return; // 如果没有订单列表元素则返回
       
       try {
         const response = await fetch('/orders/recent');
@@ -367,7 +589,12 @@
     }
 
     // 页面加载时获取订单
-    loadOrders();
+    window.addEventListener('load', function() {
+      // 检查是否有订单列表元素（只有登录用户才有）
+      if (document.getElementById('ordersList')) {
+        loadOrders();
+      }
+    });
   </script>
 </body>
 </html> 
