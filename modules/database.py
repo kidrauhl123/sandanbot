@@ -104,12 +104,12 @@ def update_seller_info(telegram_id, username=None, first_name=None):
     sql = f"UPDATE sellers SET {', '.join(fields_to_update)} WHERE telegram_id = {placeholder}"
     execute_query(sql, params)
 
-def create_order_with_deduction_atomic(account, password, package, remark, username, user_id):
+def create_order_with_deduction_atomic(account, password, remark, username, user_id, qr_code_path=None):
     try:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         execute_query(
-            "INSERT INTO orders (account, password, package, status, created_at, remark, user_id, web_user_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            (account, password, package, 'submitted', now, remark, user_id, username)
+            "INSERT INTO orders (account, password, status, created_at, remark, user_id, web_user_id, qr_code_path) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (account, password, 'submitted', now, remark, user_id, username, qr_code_path)
         )
         return True, "订单创建成功", 0, 0
     except Exception as e:
@@ -166,7 +166,6 @@ def init_db():
                 id SERIAL PRIMARY KEY,
                 account VARCHAR(255) NOT NULL,
                 password VARCHAR(255),
-                package VARCHAR(10) NOT NULL,
                 status VARCHAR(20) DEFAULT 'submitted',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 accepted_at TIMESTAMP,
@@ -174,7 +173,8 @@ def init_db():
                 accepted_by VARCHAR(50),
                 remark TEXT,
                 user_id INTEGER REFERENCES users(id),
-                web_user_id VARCHAR(50)
+                web_user_id VARCHAR(50),
+                qr_code_path VARCHAR(500)
             )
         """)
         

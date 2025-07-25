@@ -97,7 +97,7 @@ def migrate_database():
                 )
             """)
         
-        # 确保其他表存在
+        # 确保sellers表存在
         execute_query("""
             CREATE TABLE IF NOT EXISTS sellers (
                 id SERIAL PRIMARY KEY,
@@ -112,22 +112,87 @@ def migrate_database():
             )
         """)
         
-        execute_query("""
-            CREATE TABLE IF NOT EXISTS orders (
-                id SERIAL PRIMARY KEY,
-                account VARCHAR(255) NOT NULL,
-                password VARCHAR(255),
-                package VARCHAR(10) NOT NULL,
-                status VARCHAR(20) DEFAULT 'submitted',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                accepted_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                accepted_by VARCHAR(50),
-                remark TEXT,
-                user_id INTEGER REFERENCES users(id),
-                web_user_id VARCHAR(50)
-            )
-        """)
+        # 检查orders表是否有package字段，如果有则删除
+        result = execute_query("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'orders' AND column_name = 'package'
+        """, fetch=True)
+        
+        if result:
+            logger.info("检测到orders表有package字段，开始删除...")
+            
+            # 创建新的orders表（没有package字段）
+            execute_query("""
+                CREATE TABLE IF NOT EXISTS orders_new (
+                    id SERIAL PRIMARY KEY,
+                    account VARCHAR(255) NOT NULL,
+                    password VARCHAR(255),
+                    status VARCHAR(20) DEFAULT 'submitted',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    accepted_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    accepted_by VARCHAR(50),
+                    remark TEXT,
+                    user_id INTEGER REFERENCES users(id),
+                    web_user_id VARCHAR(50),
+                    qr_code_path VARCHAR(500)
+                )
+            """)
+            
+            # 复制数据（除了package字段）
+            try:
+                execute_query("""
+                    INSERT INTO orders_new (id, account, password, status, created_at, accepted_at, completed_at, accepted_by, remark, user_id, web_user_id)
+                    SELECT id, account, password, status, created_at, accepted_at, completed_at, accepted_by, remark, user_id, web_user_id
+                    FROM orders
+                """)
+                logger.info("已复制orders数据")
+                
+                # 删除旧表并重命名新表
+                execute_query("DROP TABLE orders CASCADE")
+                execute_query("ALTER TABLE orders_new RENAME TO orders")
+                logger.info("已删除package字段并更新orders表结构")
+            except Exception as e:
+                logger.warning(f"迁移orders表时出错: {str(e)}")
+                # 如果出错，直接创建新表
+                execute_query("DROP TABLE IF EXISTS orders_new")
+                execute_query("""
+                    CREATE TABLE orders (
+                        id SERIAL PRIMARY KEY,
+                        account VARCHAR(255) NOT NULL,
+                        password VARCHAR(255),
+                        status VARCHAR(20) DEFAULT 'submitted',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        accepted_at TIMESTAMP,
+                        completed_at TIMESTAMP,
+                        accepted_by VARCHAR(50),
+                        remark TEXT,
+                        user_id INTEGER REFERENCES users(id),
+                        web_user_id VARCHAR(50),
+                        qr_code_path VARCHAR(500)
+                    )
+                """)
+                logger.info("已创建新的orders表（无package字段）")
+        else:
+            # orders表不存在或没有package字段，直接创建正确的表结构
+            execute_query("""
+                CREATE TABLE IF NOT EXISTS orders (
+                    id SERIAL PRIMARY KEY,
+                    account VARCHAR(255) NOT NULL,
+                    password VARCHAR(255),
+                    status VARCHAR(20) DEFAULT 'submitted',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    accepted_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    accepted_by VARCHAR(50),
+                    remark TEXT,
+                    user_id INTEGER REFERENCES users(id),
+                    web_user_id VARCHAR(50),
+                    qr_code_path VARCHAR(500)
+                )
+            """)
+            logger.info("已创建orders表（包含qr_code_path字段）")
         
         # 创建默认管理员用户
         from modules.database import hash_password

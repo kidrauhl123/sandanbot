@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 from modules.database import execute_query, get_all_sellers, create_order_with_deduction_atomic
 from modules.constants import STATUS_TEXT_ZH
 from modules.auth import login_required, admin_required, authenticate_user, create_user, get_user_by_id, get_all_users, update_user_role, delete_user
+from modules.telegram_bot import notify_sellers_sync
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +33,15 @@ def register_routes(app: Flask):
             try:
                 # 获取表单数据 - 支持文件上传
                 qr_code_file = request.files.get('qr_code')
-                package = request.form.get('package', '12')  # 默认套餐
-                preferred_seller = request.form.get('preferred_seller')
                 remark = request.form.get('remark', '')
                 
-                # 获取账号信息 - 从二维码或其他方式获取
-                account = 'AUTO_GENERATED'  # 这里可以添加二维码解析逻辑
+                # 检查是否上传了二维码
+                if not qr_code_file or qr_code_file.filename == '':
+                    return jsonify({'success': False, 'message': '请上传二维码图片'}), 400
+                
+                # 获取账号信息 - 从二维码文件名生成
+                account = 'AUTO_GENERATED'
+                qr_code_path = None
                 
                 # 处理文件上传
                 if qr_code_file and allowed_file(qr_code_file.filename):
@@ -47,15 +51,20 @@ def register_routes(app: Flask):
                     unique_filename = f"{name}_{uuid.uuid4().hex[:8]}{ext}"
                     
                     # 确保上传目录存在
-                    upload_path = os.path.join(app.root_path, UPLOAD_FOLDER)
+                    upload_path = os.path.join('static', 'uploads')
                     os.makedirs(upload_path, exist_ok=True)
                     
                     # 保存文件
                     file_path = os.path.join(upload_path, unique_filename)
                     qr_code_file.save(file_path)
                     
-                    # 可以在这里添加二维码解析逻辑来获取账号信息
-                    account = f"QR_{unique_filename}"
+                    # 保存相对路径用于数据库
+                    qr_code_path = f"uploads/{unique_filename}"
+                    
+                    # 生成基于文件的账号信息
+                    account = f"QR_{unique_filename.split('_')[0]}"
+                else:
+                    return jsonify({'success': False, 'message': '不支持的文件格式，请上传图片文件'}), 400
                 
                 # 获取用户信息
                 user_id = session.get('user_id')
@@ -64,17 +73,32 @@ def register_routes(app: Flask):
                 
                 # 创建订单
                 success, message, _, _ = create_order_with_deduction_atomic(
-                    account, '', package, remark, username, user_id
+                    account, '', remark, username, user_id, qr_code_path
                 )
                 
                 if success:
-                    return jsonify({'success': True, 'message': '订单创建成功'})
+                    # 获取刚创建的订单ID
+                    order_result = execute_query(
+                        "SELECT id FROM orders WHERE account = %s AND user_id = %s ORDER BY id DESC LIMIT 1",
+                        (account, user_id), fetch=True
+                    )
+                    
+                    if order_result:
+                        order_id = order_result[0][0]
+                        # 发送Telegram通知给所有活跃卖家
+                        try:
+                            notify_sellers_sync(order_id, account, remark, qr_code_path)
+                            logger.info(f"已发送Telegram通知，订单ID: {order_id}")
+                        except Exception as e:
+                            logger.error(f"发送Telegram通知失败: {str(e)}")
+                    
+                    return jsonify({'success': True, 'message': '订单创建成功，二维码已上传，已通知卖家'})
                 else:
                     return jsonify({'success': False, 'message': message}), 400
                     
             except Exception as e:
                 logger.error(f"创建订单失败: {str(e)}")
-                return jsonify({'success': False, 'message': '创建订单失败'}), 500
+                return jsonify({'success': False, 'message': f'创建订单失败: {str(e)}'}), 500
         
         # GET请求 - 显示主页
         user = None
@@ -188,12 +212,10 @@ def register_routes(app: Flask):
         try:
             account = request.form.get('account')
             password = request.form.get('password', '')
-            package = request.form.get('package')
             remark = request.form.get('remark', '')
-            preferred_seller = request.form.get('preferred_seller')
             
-            if not account or not package:
-                return jsonify({'success': False, 'message': '账号和套餐不能为空'}), 400
+            if not account:
+                return jsonify({'success': False, 'message': '账号不能为空'}), 400
             
             # 获取用户信息
             user_id = session.get('user_id')
@@ -202,7 +224,7 @@ def register_routes(app: Flask):
             
             # 创建订单
             success, message, _, _ = create_order_with_deduction_atomic(
-                account, password, package, remark, username, user_id
+                account, password, remark, username, user_id
             )
             
             if success:
