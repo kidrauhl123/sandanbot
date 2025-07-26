@@ -169,34 +169,225 @@ def register_routes(app, notification_queue):
     @app.route('/', methods=['POST'])
     @login_required
     def create_order():
-        account = request.form.get('account')
-        password = request.form.get('password')
-        remark = request.form.get('remark')
+        logger.info("处理图片上传请求")
         
-        if not all([account, password]):
-            return render_template('index.html', error='账号和密码不能为空', prices=WEB_PRICES, plan_options=PLAN_OPTIONS, username=session.get('username'))
+        # 优先检查正常文件上传
+        if 'qr_code' in request.files and request.files['qr_code'].filename != '':
+            qr_code = request.files['qr_code']
+            logger.info(f"接收到文件上传: {qr_code.filename}")
+        # 然后检查base64数据（来自粘贴或拖放）
+        elif 'qr_code_base64' in request.form and request.form['qr_code_base64']:
+            # 处理Base64图片数据
+            try:
+                import base64
+                from io import BytesIO
+                from werkzeug.datastructures import FileStorage
+                
+                # 解析Base64数据
+                base64_data = request.form['qr_code_base64'].split(',')[1] if ',' in request.form['qr_code_base64'] else request.form['qr_code_base64']
+                image_data = base64.b64decode(base64_data)
+                
+                # 创建文件对象
+                qr_code = FileStorage(
+                    stream=BytesIO(image_data),
+                    filename='pasted_image.png',
+                    content_type='image/png',
+                )
+                logger.info("成功从Base64数据创建文件对象")
+            except Exception as e:
+                logger.error(f"处理Base64图片数据失败: {str(e)}")
+                return jsonify({"success": False, "error": f"处理粘贴的图片失败: {str(e)}"}), 400
+        else:
+            logger.warning("订单提交失败: 未上传二维码图片")
+            return jsonify({"success": False, "error": "请上传油管二维码图片"}), 400
             
-        user_id = session.get('user_id')
-        username = session.get('username')
+        # 保存二维码图片
+        import uuid, os
+        from datetime import datetime
+        import imghdr  # 用于验证图片格式
         
-        # 使用原子操作创建订单
-        success, message = create_order_with_deduction_atomic(account, password, remark, username, user_id)
+        # 检查是否是有效的图片文件
+        try:
+            # 先保存到临时文件
+            temp_path = os.path.join('static', 'temp_upload.png')
+            qr_code.save(temp_path)
+            
+            # 验证文件是否为图片
+            img_type = imghdr.what(temp_path)
+            if not img_type:
+                os.remove(temp_path)  # 清理临时文件
+                logger.warning("订单提交失败: 上传的文件不是有效的图片")
+                return jsonify({"success": False, "error": "请上传有效的图片文件"}), 400
+                
+            # 生成唯一文件名
+            file_ext = f".{img_type}" if img_type else ".png"
+            unique_filename = f"{uuid.uuid4().hex}{file_ext}"
+            timestamp = datetime.now().strftime("%Y%m%d")
+            save_path = os.path.join('static', 'uploads', timestamp)
+            
+            # 确保保存目录存在
+            if not os.path.exists(save_path):
+                os.makedirs(save_path, exist_ok=True)
+                # 确保目录权限正确
+                os.chmod(save_path, 0o755)
+                
+            file_path = os.path.join(save_path, unique_filename)
+            
+            # 直接复制文件而不是移动
+            import shutil
+            shutil.copy2(temp_path, file_path)
+            
+            # 确保图片权限正确
+            os.chmod(file_path, 0o644)
+            
+            # 验证文件是否成功保存
+            if not os.path.exists(file_path):
+                logger.error(f"图片保存失败，目标文件不存在: {file_path}")
+                return jsonify({"success": False, "error": "图片保存失败，请重试"}), 500
+                
+            file_size = os.path.getsize(file_path)
+            if file_size == 0:
+                logger.error(f"图片保存失败，文件大小为0: {file_path}")
+                os.remove(file_path)  # 删除空文件
+                return jsonify({"success": False, "error": "图片保存失败，文件大小为0"}), 500
+                
+            logger.info(f"图片成功保存到: {file_path}，大小: {file_size} 字节")
+            
+        except Exception as e:
+            logger.error(f"保存图片时出错: {str(e)}")
+            return jsonify({"success": False, "error": f"保存图片时出错: {str(e)}"}), 500
         
-        if not success:
-            return render_template('index.html', error=message, prices=WEB_PRICES, plan_options=PLAN_OPTIONS, username=session.get('username'))
+        # 使用文件路径作为账号，密码设为空(因为现在依靠二维码)
+        account = file_path
+        password = ""
+        package = request.form.get('package', '12')  # 默认为12个月
+        remark = request.form.get('remark', '')
         
-        order_id = message
-        flash(f'订单创建成功！订单ID: {order_id}', 'success')
+        # 获取指定的接单人
+        preferred_seller = request.form.get('preferred_seller', '')
+        if preferred_seller:
+            # 检查该卖家是否已有3个未确认订单
+            unconfirmed_orders_query = """
+                SELECT COUNT(*) FROM orders 
+                WHERE accepted_by = ? 
+                AND status = ? 
+                AND completed_at IS NULL
+            """
+            unconfirmed_count = execute_query(
+                unconfirmed_orders_query, 
+                (preferred_seller, STATUS['ACCEPTED']), 
+                fetch=True
+            )[0][0]
+            
+            if unconfirmed_count >= 3:
+                logger.warning(f"订单提交失败: 卖家 {preferred_seller} 已有 {unconfirmed_count} 个未确认订单")
+                return jsonify({
+                    "success": False, 
+                    "error": "该卖家已有3个未确认订单，请选择其他卖家或等待卖家完成现有订单"
+                }), 400
+            
+            # 查询卖家昵称
+            seller_info = execute_query(
+                "SELECT nickname, first_name, username FROM sellers WHERE telegram_id = ?",
+                (preferred_seller,),
+                fetch=True
+            )
+            display_name = None
+            if seller_info:
+                nickname, first_name, username = seller_info[0]
+                display_name = nickname or first_name or username
+            if not display_name:
+                display_name = "指定卖家"
+            remark = f"[指定接单人:{display_name}] {remark}"
+            logger.info(f"用户指定接单人: {preferred_seller} ({display_name})")
+        
+        logger.info(f"收到订单提交请求: 二维码={file_path}, 套餐={package}, 指定接单人={preferred_seller or '无'}")
+        
+        if not account:
+            logger.warning("订单提交失败: 二维码保存失败")
+            return jsonify({"success": False, "error": "二维码保存失败，请重试"}), 400
         
         try:
-            # 异步发送新订单通知
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_in_executor(None, send_new_order_notification, order_id)
-        except Exception as e:
-            logger.error(f"创建订单后发送通知失败: {str(e)}", exc_info=True)
+            user_id = session.get('user_id')
+            username = session.get('username')
             
-        return redirect(url_for('index'))
+            # 使用原子操作创建订单和扣款
+            success, message, new_balance, credit_limit = create_order_with_deduction_atomic(
+                account, password, package, remark, username, user_id
+            )
+            
+            if not success:
+                logger.warning(f"订单创建失败: {message} (用户={username})")
+                return jsonify({
+                    "success": False,
+                    "error": message,
+                    "balance": new_balance, # Might be None, but client-side should handle
+                    "credit_limit": credit_limit
+                }), 400
+
+            logger.info(f"订单提交成功: 用户={username}, 套餐={package}, 新余额={new_balance}")
+            
+            # 获取最新订单列表并格式化
+            orders_raw = execute_query("SELECT id, account, password, package, status, created_at FROM orders ORDER BY id DESC LIMIT 5", fetch=True)
+            orders = []
+            
+            # 获取新创建的订单ID
+            new_order_id = None
+            if orders_raw and len(orders_raw) > 0:
+                new_order_id = orders_raw[0][0]
+                logger.info(f"新创建的订单ID: {new_order_id}")
+                print(f"DEBUG: 新创建的订单ID: {new_order_id}")
+            
+            for o in orders_raw:
+                orders.append({
+                    "id": o[0],
+                    "account": o[1],
+                    "password": o[2],
+                    "package": o[3],
+                    "status": o[4],
+                    "status_text": STATUS_TEXT_ZH.get(o[4], o[4]),
+                    "created_at": o[5],
+                    "accepted_at": "",
+                    "completed_at": "",
+                    "remark": "",
+                    "creator": username, # Simplification, actual creator might differ if admin creates for others
+                    "accepted_by": "",
+                    "can_cancel": o[4] == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == o[6])
+                })
+            
+            # 触发立即通知卖家 - 获取新创建的订单ID并加入通知队列
+            if new_order_id:
+                # 加入通知队列，通知类型为new_order
+                # 获取指定的接单人
+                preferred_seller = request.form.get('preferred_seller', '')
+                # 直接使用相对路径
+                logger.info(f"添加到通知队列的图片路径: {file_path}")
+                
+                notification_queue.put({
+                    'type': 'new_order',
+                    'order_id': new_order_id,
+                    'account': file_path,  # 使用相对路径
+                    'password': '',  # 不再使用密码
+                    'package': package,
+                    'preferred_seller': preferred_seller,
+                    'remark': remark  # 添加备注信息
+                })
+                logger.info(f"已将订单 #{new_order_id} 加入通知队列")
+                print(f"DEBUG: 已将订单 #{new_order_id} 加入通知队列")
+            else:
+                logger.warning("无法获取新创建的订单ID，无法发送通知")
+                print("WARNING: 无法获取新创建的订单ID，无法发送通知")
+            
+            return jsonify({
+                "success": True,
+                "message": '订单已提交成功！',
+                "balance": new_balance,
+                "credit_limit": credit_limit
+            })
+            
+        except Exception as e:
+            logger.error(f"创建订单时出错: {str(e)}", exc_info=True)
+            return jsonify({"success": False, "error": f"创建订单时出错: {str(e)}"}), 500
 
     @app.route('/orders/stats/web/<user_id>')
     @login_required
@@ -554,7 +745,7 @@ def register_routes(app, notification_queue):
                 "last_login": user[4],
                 "balance": user[5] if len(user) > 5 else 0,
                 "credit_limit": user[6] if len(user) > 6 else 0,
-                "today_consumption": 0 # 暂时禁用
+                "today_consumption": today_consumption
             })
         
         return jsonify(user_data)

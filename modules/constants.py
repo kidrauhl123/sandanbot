@@ -58,19 +58,47 @@ def sync_env_sellers_to_db():
         logger.error(f"同步环境变量卖家到数据库失败: {e}")
 
 # ===== 价格系统 =====
-# 默认价格（美元USDT）
-WEB_PRICES = {'default': 20}
+# 网页端价格（美元USDT）
+WEB_PRICES = {
+    '1': 5,     # 1个月
+    '2': 9,     # 2个月
+    '3': 13,    # 3个月
+    '6': 16,    # 6个月
+    '12': 20    # 12个月
+}
 # Telegram端卖家薪资（美元）
-TG_PRICES = {'default': 10}
+TG_PRICES = {
+    '1': 2.5,   # 1个月
+    '2': 4.5,   # 2个月
+    '3': 6.5,   # 3个月
+    '6': 8,     # 6个月
+    '12': 10    # 12个月
+}
 
-# 获取订单价格
-def get_order_price(user_id=None):
+# 获取用户套餐价格
+def get_user_package_price(user_id, package):
     """
-    获取订单的固定价格。
-    未来可扩展为根据用户ID获取定制价格。
+    获取特定用户的套餐价格
+    
+    参数:
+    - user_id: 用户ID
+    - package: 套餐（如'1'，'2'等）
+    
+    返回:
+    - 用户的套餐价格，如果没有定制价格则返回默认价格
     """
-    # 目前返回默认价格
-    return WEB_PRICES.get('default', 0)
+    # 如果没有用户ID，返回默认价格
+    if not user_id:
+        return WEB_PRICES.get(package, 0)
+        
+    # 避免循环导入
+    from modules.database import get_user_custom_prices
+    
+    # 获取用户定制价格
+    custom_prices = get_user_custom_prices(user_id)
+    
+    # 如果该套餐有定制价格，返回定制价格，否则返回默认价格
+    return custom_prices.get(package, WEB_PRICES.get(package, 0))
 
 # ===== 状态常量 =====
 STATUS = {
