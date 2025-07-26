@@ -357,6 +357,10 @@ def register_routes(app, notification_queue):
             
             # 触发立即通知卖家 - 获取新创建的订单ID并加入通知队列
             if new_order_id:
+                # 立即标记订单为已通知，避免重复处理
+                from modules.database import mark_order_notified
+                mark_order_notified(new_order_id)
+                
                 # 加入通知队列，通知类型为new_order
                 # 获取指定的接单人
                 preferred_seller = request.form.get('preferred_seller', '')

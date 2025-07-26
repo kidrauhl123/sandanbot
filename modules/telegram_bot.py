@@ -671,6 +671,11 @@ async def send_notification_from_queue(data):
                     
                 except Exception as e:
                     logger.error(f"向卖家 {seller_id} 发送订单通知时出错: {str(e)}", exc_info=True)
+            
+            # 成功发送通知后，标记订单为已通知
+            from modules.database import mark_order_notified
+            if mark_order_notified(order_id):
+                logger.info(f"订单 #{order_id} 已标记为已通知，避免重复发送")
                     
     except Exception as e:
         logger.error(f"处理通知数据失败: {str(e)}", exc_info=True)
@@ -1303,6 +1308,10 @@ async def check_and_push_orders():
                 order_id = order[0]
                 account = order[1]  # 图片路径
                 remark = order[6] if len(order) > 6 else ""
+                
+                # 立即标记为已通知，避免重复处理
+                from modules.database import mark_order_notified
+                mark_order_notified(order_id)
                 
                 # 使用全局通知队列
                 global notification_queue

@@ -352,6 +352,17 @@ def get_unnotified_orders():
     
     return orders
 
+# 标记订单为已通知
+def mark_order_notified(order_id):
+    """将订单标记为已通知"""
+    try:
+        execute_query("UPDATE orders SET notified = 1 WHERE id = ?", (order_id,))
+        logger.info(f"订单 #{order_id} 已标记为已通知")
+        return True
+    except Exception as e:
+        logger.error(f"标记订单 #{order_id} 为已通知时出错: {str(e)}", exc_info=True)
+        return False
+
 # 获取订单详情
 def get_order_details(oid):
     return execute_query("SELECT id, account, password, package, status, remark FROM orders WHERE id = %s", (oid,), fetch=True)
