@@ -70,10 +70,55 @@ def add_balance_record(user_id, amount, type_name, reason, reference_id=None, ba
         return None
 
 # ===== 数据库 =====
+def init_sqlite_db():
+    """初始化SQLite数据库"""
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "orders.db")
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # 创建用户表
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        password_hash TEXT,
+        email TEXT,
+        is_admin INTEGER DEFAULT 0,
+        created_at TEXT,
+        balance REAL DEFAULT 0,
+        credit_limit REAL DEFAULT 0,
+        last_login TEXT
+    )
+    ''')
+    
+    # 检查并添加缺失的字段
+    cursor.execute("PRAGMA table_info(users)")
+    columns = [column[1] for column in cursor.fetchall()]
+    
+    if 'last_login' not in columns:
+        logger.info("为SQLite users表添加last_login列")
+        cursor.execute("ALTER TABLE users ADD COLUMN last_login TEXT")
+        
+    if 'balance' not in columns:
+        logger.info("为SQLite users表添加balance列")
+        cursor.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0")
+        
+    if 'credit_limit' not in columns:
+        logger.info("为SQLite users表添加credit_limit列")
+        cursor.execute("ALTER TABLE users ADD COLUMN credit_limit REAL DEFAULT 0")
+    
+    conn.commit()
+    conn.close()
+
 def init_db():
-    """初始化PostgreSQL数据库"""
-    logger.info(f"初始化数据库，使用连接: {DATABASE_URL[:10]}...")
-    init_postgres_db()
+    """初始化数据库"""
+    logger.info(f"初始化数据库，使用连接: {DATABASE_URL[:10] if DATABASE_URL else 'SQLite'}...")
+    
+    if DATABASE_URL and DATABASE_URL.startswith('postgres'):
+        init_postgres_db()
+    else:
+        logger.info("使用SQLite数据库")
+        init_sqlite_db()
     
     # 创建充值记录表和余额记录表
     logger.info("正在创建充值记录表和余额记录表...")

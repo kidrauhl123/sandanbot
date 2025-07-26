@@ -1,41 +1,64 @@
 import sqlite3
 import os
 
-# 连接数据库
-db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "orders.db")
-print(f"数据库路径: {db_path}")
+def check_and_fix_database():
+    """检查并修复数据库表结构"""
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "orders.db")
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        print("检查数据库表结构...")
+        
+        # 检查users表结构
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [column[1] for column in cursor.fetchall()]
+        print(f"users表的列: {columns}")
+        
+        # 检查是否缺少last_login字段
+        if 'last_login' not in columns:
+            print("添加缺失的last_login字段...")
+            cursor.execute("ALTER TABLE users ADD COLUMN last_login TEXT")
+            conn.commit()
+            print("last_login字段添加成功")
+        
+        # 检查是否缺少balance字段
+        if 'balance' not in columns:
+            print("添加缺失的balance字段...")
+            cursor.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0")
+            conn.commit()
+            print("balance字段添加成功")
+        
+        # 检查是否缺少credit_limit字段
+        if 'credit_limit' not in columns:
+            print("添加缺失的credit_limit字段...")
+            cursor.execute("ALTER TABLE users ADD COLUMN credit_limit REAL DEFAULT 0")
+            conn.commit()
+            print("credit_limit字段添加成功")
+        
+        # 重新检查表结构
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [column[1] for column in cursor.fetchall()]
+        print(f"修复后users表的列: {columns}")
+        
+        # 检查用户数据
+        cursor.execute("SELECT COUNT(*) FROM users")
+        user_count = cursor.fetchone()[0]
+        print(f"用户总数: {user_count}")
+        
+        if user_count > 0:
+            cursor.execute("SELECT id, username, is_admin, created_at, last_login, balance, credit_limit FROM users LIMIT 5")
+            users = cursor.fetchall()
+            print("前5个用户:")
+            for user in users:
+                print(f"  用户: {user}")
+        
+        conn.close()
+        print("数据库检查完成")
+        
+    except Exception as e:
+        print(f"数据库检查失败: {e}")
 
-conn = sqlite3.connect(db_path)
-cursor = conn.cursor()
-
-# 检查激活码表结构
-cursor.execute("SELECT * FROM sqlite_master WHERE type='table' AND name='activation_codes'")
-table_info = cursor.fetchone()
-if table_info:
-    print("\n激活码表结构:")
-    print(table_info[4])  # 表创建SQL
-else:
-    print("\n激活码表不存在!")
-
-# 检查激活码表内容
-try:
-    cursor.execute("SELECT id, code, package, is_used, used_at, used_by FROM activation_codes LIMIT 10")
-    codes = cursor.fetchall()
-    print("\n激活码表内容(前10条):")
-    for code in codes:
-        print(code)
-except Exception as e:
-    print(f"\n查询激活码表出错: {e}")
-
-# 检查订单表中的激活码相关订单
-try:
-    cursor.execute("SELECT id, account, package, status, remark FROM orders WHERE remark LIKE '%通过激活码兑换%' LIMIT 10")
-    orders = cursor.fetchall()
-    print("\n激活码相关订单(前10条):")
-    for order in orders:
-        print(order)
-except Exception as e:
-    print(f"\n查询订单表出错: {e}")
-
-# 关闭连接
-conn.close() 
+if __name__ == "__main__":
+    check_and_fix_database() 
