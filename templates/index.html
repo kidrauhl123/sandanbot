@@ -1891,8 +1891,8 @@
   let searchKeyword = ''; // 搜索关键词
   let autoRefreshInterval = null;
   let userId = '{{ session.get("user_id", "") }}'; // 当前用户ID
-  let isLoggedIn = {{ 'true' if session.get('user_id') else 'false' }}; // 是否已登录
-  let isAdmin = {{ 'true' if session.get('is_admin') else 'false' }}; // 是否是管理员
+  let isLoggedIn = {% if session.get('user_id') %}true{% else %}false{% endif %}; // 是否已登录
+  let isAdmin = {% if session.get('is_admin') %}true{% else %}false{% endif %}; // 是否是管理员
   let lastOrdersHash = ''; // 用于检测订单变化的哈希
   let viewMode = 'table'; // 默认视图模式：grid 或 table
   let page = 1; // 当前页码
@@ -2386,9 +2386,9 @@
     };
   }
 
-  // 页面加载处理
-  document.addEventListener('DOMContentLoaded', function() {
-    // 如果是管理员，为container添加特殊类以调整布局宽度
+      // 页面加载处理
+    document.addEventListener('DOMContentLoaded', function() {
+      // 如果是管理员，为container添加特殊类以调整布局宽度
     if (isAdmin) {
       const container = document.querySelector('.container');
       if (container) {
