@@ -1393,9 +1393,35 @@ def register_routes(app, notification_queue):
             
             # 发送TG通知给所有活跃卖家
             from modules.telegram_bot import send_availability_check
-            for seller in active_sellers:
-                telegram_id, nickname = seller
-                asyncio.create_task(send_availability_check(telegram_id, username))
+            import threading
+            
+            def send_notifications():
+                """在单独线程中发送通知"""
+                import asyncio
+                
+                async def send_all_notifications():
+                    tasks = []
+                    for seller in active_sellers:
+                        telegram_id, nickname = seller
+                        task = send_availability_check(telegram_id, username)
+                        tasks.append(task)
+                    
+                    if tasks:
+                        await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # 在新的事件循环中运行
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(send_all_notifications())
+                except Exception as e:
+                    logger.error(f"发送通知失败: {str(e)}")
+                finally:
+                    loop.close()
+            
+            # 在后台线程中发送通知
+            notification_thread = threading.Thread(target=send_notifications, daemon=True)
+            notification_thread.start()
             
             logger.info(f"用户 {username} 发起卖家在线检查，通知了 {len(active_sellers)} 个卖家")
             

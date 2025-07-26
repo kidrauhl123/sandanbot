@@ -769,59 +769,72 @@
       position: relative;
     }
     
-    /* 模式选择样式 */
-    .mode-selector {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+    /* 选项卡样式 */
+    .mode-tabs {
       margin-bottom: 20px;
     }
     
-    .mode-option {
+    .tab-header {
       display: flex;
-      align-items: flex-start;
-      padding: 15px;
-      border: 2px solid #e0e6ed;
-      border-radius: 8px;
+      border-bottom: 2px solid #e5e7eb;
+      margin-bottom: 0;
+    }
+    
+    .tab-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      border: none;
+      background: transparent;
+      color: #6b7280;
       cursor: pointer;
       transition: all 0.3s ease;
-      background: #f8fafc;
-    }
-    
-    .mode-option:hover {
-      border-color: #667eea;
-      background: #f0f4ff;
-    }
-    
-    .mode-option input[type="radio"] {
-      margin-right: 12px;
-      margin-top: 2px;
-    }
-    
-    .mode-option input[type="radio"]:checked + .mode-label {
-      color: #667eea;
-      font-weight: 600;
-    }
-    
-    .mode-option input[type="radio"]:checked {
-      accent-color: #667eea;
-    }
-    
-    .mode-option:has(input:checked) {
-      border-color: #667eea;
-      background: #f0f4ff;
-    }
-    
-    .mode-label {
-      display: block;
+      border-bottom: 3px solid transparent;
+      font-size: 14px;
       font-weight: 500;
-      margin-bottom: 4px;
     }
     
-    .mode-option small {
-      color: #6b7280;
-      font-size: 12px;
-      line-height: 1.4;
+    .tab-btn:hover {
+      background: #f9fafb;
+      color: #374151;
+    }
+    
+    .tab-btn.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+      background: #f0f4ff;
+    }
+    
+    .tab-btn i {
+      font-size: 16px;
+    }
+    
+    /* 响应式设计 */
+    @media (max-width: 768px) {
+      .tab-btn {
+        padding: 10px 16px;
+        font-size: 13px;
+      }
+      
+      .tab-btn span {
+        display: none; /* 小屏幕只显示图标 */
+      }
+      
+      .tab-btn i {
+        font-size: 18px;
+      }
+    }
+    
+    /* A模式容器样式 */
+    #modeAContainer {
+      border-top: none;
+      padding-top: 20px;
+    }
+    
+    #modeBContainer {
+      border-top: none;
+      padding-top: 20px;
     }
     
     /* A模式步骤样式 */
@@ -1121,20 +1134,17 @@
                 <div class="card-header">
                   <h2>充值下单</h2>
                 </div>
-                <!-- 模式选择 -->
-                <div class="form-group">
-                  <label>选择下单模式</label>
-                  <div class="mode-selector">
-                    <label class="mode-option">
-                      <input type="radio" name="orderMode" value="A" id="modeA">
-                      <span class="mode-label">A模式 - 分步下单</span>
-                      <small>先检查卖家在线状态，再批量下单</small>
-                    </label>
-                    <label class="mode-option">
-                      <input type="radio" name="orderMode" value="B" id="modeB" checked>
-                      <span class="mode-label">B模式 - 快速下单</span>
-                      <small>直接提交订单，系统自动分配</small>
-                    </label>
+                <!-- 模式选择 - 选项卡样式 -->
+                <div class="mode-tabs">
+                  <div class="tab-header">
+                    <button type="button" class="tab-btn" id="tabModeA" data-mode="A" title="先检查卖家在线状态，再批量下单">
+                      <i class="fas fa-search"></i>
+                      <span>分步下单</span>
+                    </button>
+                    <button type="button" class="tab-btn active" id="tabModeB" data-mode="B" title="直接提交订单，系统自动分配">
+                      <i class="fas fa-bolt"></i>
+                      <span>快速下单</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1420,29 +1430,41 @@
 
   // 模式切换功能
   function initModeSelector() {
-    const modeARadio = document.getElementById('modeA');
-    const modeBRadio = document.getElementById('modeB');
+    const tabModeA = document.getElementById('tabModeA');
+    const tabModeB = document.getElementById('tabModeB');
     const modeAContainer = document.getElementById('modeAContainer');
     const modeBContainer = document.getElementById('modeBContainer');
     
-    function switchMode() {
-      if (modeARadio.checked) {
+    let currentMode = 'B'; // 默认B模式
+    
+    function switchMode(mode) {
+      // 更新tab按钮状态
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      
+      if (mode === 'A') {
+        tabModeA.classList.add('active');
         modeAContainer.style.display = 'block';
         modeBContainer.style.display = 'none';
+        currentMode = 'A';
       } else {
+        tabModeB.classList.add('active');
         modeAContainer.style.display = 'none';
         modeBContainer.style.display = 'block';
+        currentMode = 'B';
       }
     }
     
-    modeARadio.addEventListener('change', switchMode);
-    modeBRadio.addEventListener('change', switchMode);
+    // 绑定选项卡点击事件
+    tabModeA.addEventListener('click', () => switchMode('A'));
+    tabModeB.addEventListener('click', () => switchMode('B'));
     
     // 初始化A模式功能
     initModeA();
     
     // 初始状态
-    switchMode();
+    switchMode('B');
   }
   
   // A模式功能初始化
@@ -1674,8 +1696,8 @@
       const formData = new FormData();
       formData.append('mode', 'A');
       formData.append('order_count', orderCount);
-      formData.append('qr_code', fileInput.files[0]);
-      formData.append('remark', remark);
+      formData.append('qr_code_a', fileInput.files[0]); // 使用正确的字段名
+      formData.append('remark_a', remark);
       formData.append('package', '12'); // 固定套餐
       
       const response = await fetch('/create_order', {
