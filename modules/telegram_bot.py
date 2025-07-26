@@ -501,7 +501,7 @@ async def bot_main(queue):
         
         # 添加处理程序
         bot_application.add_handler(CommandHandler("start", on_start))
-    bot_application.add_handler(CommandHandler("stop", on_stop))
+        bot_application.add_handler(CommandHandler("stop", on_stop))
         bot_application.add_handler(CommandHandler("seller", on_seller_command))
         bot_application.add_handler(CommandHandler("orders", on_orders))  # 添加新命令
         
