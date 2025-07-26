@@ -98,35 +98,7 @@ def register_routes(app, notification_queue):
         
         return render_template('login.html')
 
-    @app.route('/register', methods=['GET', 'POST'])
-    def register():
-        if request.method == 'POST':
-            username = request.form.get('username')
-            password = request.form.get('password')
-            confirm_password = request.form.get('password_confirm')  # 修正字段名称
-            
-            # 验证输入
-            if not username or not password or not confirm_password:
-                return render_template('register.html', error='请填写所有字段')
-                
-            if password != confirm_password:
-                return render_template('register.html', error='两次密码输入不一致')
-            
-            # 检查用户名是否已存在
-            existing_user = execute_query("SELECT id FROM users WHERE username=%s", (username,), fetch=True)
-            if existing_user:
-                return render_template('register.html', error='用户名已存在')
-            
-            # 创建用户
-            hashed_password = hash_password(password)
-            execute_query("""
-                INSERT INTO users (username, password_hash, is_admin, created_at) 
-                VALUES (?, ?, 0, ?)
-            """, (username, hashed_password, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-            
-            return redirect(url_for('login'))
-        
-        return render_template('register.html')
+
 
     @app.route('/logout')
     def logout():
@@ -753,6 +725,47 @@ def register_routes(app, notification_queue):
             })
         
         return jsonify(user_data)
+    
+    @app.route('/admin/api/users', methods=['POST'])
+    @login_required
+    @admin_required
+    def admin_create_user():
+        """创建新用户（仅限管理员）"""
+        try:
+            data = request.get_json()
+            
+            if not data:
+                return jsonify({"success": False, "error": "请求数据格式错误"}), 400
+            
+            username = data.get('username', '').strip()
+            password = data.get('password', '')
+            is_admin = data.get('is_admin', False)
+            
+            # 验证输入
+            if not username or not password:
+                return jsonify({"success": False, "error": "用户名和密码不能为空"}), 400
+            
+            if len(password) < 6:
+                return jsonify({"success": False, "error": "密码长度至少6位"}), 400
+            
+            # 检查用户名是否已存在
+            existing_user = execute_query("SELECT id FROM users WHERE username=?", (username,), fetch=True)
+            if existing_user:
+                return jsonify({"success": False, "error": "用户名已存在"}), 400
+            
+            # 创建用户
+            hashed_password = hash_password(password)
+            execute_query("""
+                INSERT INTO users (username, password_hash, is_admin, created_at, balance, credit_limit) 
+                VALUES (?, ?, ?, ?, 0, 0)
+            """, (username, hashed_password, 1 if is_admin else 0, get_china_time()))
+            
+            logger.info(f"管理员 {session.get('username')} 创建了新用户: {username} (管理员: {is_admin})")
+            return jsonify({"success": True, "message": "用户创建成功"})
+            
+        except Exception as e:
+            logger.error(f"创建用户失败: {str(e)}", exc_info=True)
+            return jsonify({"success": False, "error": f"创建用户失败: {str(e)}"}), 500
     
     @app.route('/admin/api/users/<int:user_id>/balance', methods=['POST'])
     @login_required

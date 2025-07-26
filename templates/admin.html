@@ -140,6 +140,11 @@
       display: flex;
       gap: 10px;
     }
+    
+    .content-actions {
+      display: flex;
+      gap: 10px;
+    }
 
     .data-table {
       width: 100%;
@@ -500,6 +505,11 @@
       <div id="users" class="tab-content active">
         <div class="content-header">
           <h2><i class="fas fa-users"></i> 用户管理</h2>
+          <div class="content-actions">
+            <button class="btn btn-primary" onclick="showAddUserModal()">
+              <i class="fas fa-plus"></i> 添加用户
+            </button>
+          </div>
         </div>
         <div class="users-container">
         <table class="data-table">
@@ -518,7 +528,7 @@
           </thead>
           <tbody id="users-table-body">
               <tr>
-                <td colspan="7" class="loading">加载中...</td>
+                <td colspan="9" class="loading">加载中...</td>
               </tr>
           </tbody>
         </table>
@@ -830,6 +840,46 @@
   </div>
 </div>
 
+<!-- 添加用户模态框 -->
+<div class="modal-backdrop" id="add-user-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>添加用户</h3>
+      <button class="modal-close" data-dismiss="modal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="add-user-error" class="error-message" style="display:none;"></div>
+      <form id="add-user-form">
+        <div class="form-group">
+          <label for="new-username">用户名 <span class="text-danger">*</span></label>
+          <input type="text" id="new-username" class="form-control" required>
+          <small class="text-muted">必填，用于登录的用户名</small>
+        </div>
+        <div class="form-group">
+          <label for="new-password">密码 <span class="text-danger">*</span></label>
+          <input type="password" id="new-password" class="form-control" required>
+          <small class="text-muted">必填，登录密码</small>
+        </div>
+        <div class="form-group">
+          <label for="new-password-confirm">确认密码 <span class="text-danger">*</span></label>
+          <input type="password" id="new-password-confirm" class="form-control" required>
+          <small class="text-muted">必填，再次输入密码确认</small>
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="new-is-admin"> 管理员权限
+          </label>
+          <small class="text-muted">勾选后该用户将拥有管理员权限</small>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-dismiss="modal">取消</button>
+      <button class="btn btn-primary" onclick="addUser()">添加</button>
+    </div>
+  </div>
+</div>
+
 <!-- 添加卖家模态框 -->
 <div class="modal-backdrop" id="add-seller-modal">
   <div class="modal">
@@ -944,12 +994,12 @@
         return;
       }
       
-      tbody.innerHTML = '<tr><td colspan="7" class="loading">加载中...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="loading">加载中...</td></tr>';
       
       const resp = await fetch('/admin/api/users');
       if (!resp.ok) {
         console.error("加载用户数据失败:", resp.status, resp.statusText);
-        tbody.innerHTML = '<tr><td colspan="7" class="loading">加载失败，请刷新重试</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="loading">加载失败，请刷新重试</td></tr>';
         return;
       }
       
@@ -959,7 +1009,7 @@
     tbody.innerHTML = '';
       
       if (users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="loading">暂无用户数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="loading">暂无用户数据</td></tr>';
         return;
       }
       
@@ -1019,7 +1069,7 @@
       console.error('加载用户失败', e);
       const tbody = document.getElementById('users-table-body');
       if (tbody) {
-        tbody.innerHTML = '<tr><td colspan="7" class="loading">加载失败，请刷新重试</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="loading">加载失败，请刷新重试</td></tr>';
       }
     }
   }
@@ -1034,6 +1084,77 @@
     document.getElementById('edit-balance-new').value = balance;
     
     openModal('editBalanceModal');
+  }
+
+  // 显示添加用户模态框
+  function showAddUserModal() {
+    // 清空表单
+    document.getElementById('add-user-form').reset();
+    document.getElementById('add-user-error').style.display = 'none';
+    
+    // 显示模态框
+    openModal('add-user-modal');
+  }
+  
+  // 添加用户函数
+  async function addUser() {
+    const username = document.getElementById('new-username').value.trim();
+    const password = document.getElementById('new-password').value;
+    const passwordConfirm = document.getElementById('new-password-confirm').value;
+    const isAdmin = document.getElementById('new-is-admin').checked;
+    const errorDiv = document.getElementById('add-user-error');
+    
+    // 隐藏错误信息
+    errorDiv.style.display = 'none';
+    
+    // 验证输入
+    if (!username || !password || !passwordConfirm) {
+      errorDiv.textContent = '请填写所有必填字段';
+      errorDiv.style.display = 'block';
+      return;
+    }
+    
+    if (password !== passwordConfirm) {
+      errorDiv.textContent = '两次输入的密码不一致';
+      errorDiv.style.display = 'block';
+      return;
+    }
+    
+    if (password.length < 6) {
+      errorDiv.textContent = '密码长度至少6位';
+      errorDiv.style.display = 'block';
+      return;
+    }
+    
+    try {
+      const response = await fetch('/admin/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          username: username,
+          password: password,
+          is_admin: isAdmin
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
+        alert('用户添加成功！');
+        closeModal('add-user-modal');
+        // 重新加载用户列表
+        loadUsers();
+      } else {
+        errorDiv.textContent = result.error || '添加用户失败';
+        errorDiv.style.display = 'block';
+      }
+    } catch (error) {
+      console.error('添加用户失败:', error);
+      errorDiv.textContent = '网络错误，请重试';
+      errorDiv.style.display = 'block';
+    }
   }
 
   // 修改用户透支额度函数
