@@ -997,14 +997,29 @@
       tbody.innerHTML = '<tr><td colspan="9" class="loading">加载中...</td></tr>';
       
       const resp = await fetch('/admin/api/users');
+      console.log("API响应状态:", resp.status, resp.statusText);
+      
       if (!resp.ok) {
         console.error("加载用户数据失败:", resp.status, resp.statusText);
-        tbody.innerHTML = '<tr><td colspan="9" class="loading">加载失败，请刷新重试</td></tr>';
+        try {
+          const errorData = await resp.json();
+          console.error("错误详情:", errorData);
+          tbody.innerHTML = `<tr><td colspan="9" class="loading">加载失败: ${errorData.error || resp.statusText}</td></tr>`;
+        } catch {
+          tbody.innerHTML = `<tr><td colspan="9" class="loading">加载失败: HTTP ${resp.status}</td></tr>`;
+        }
         return;
       }
       
       const users = await resp.json();
       console.log("成功获取用户数据:", users);
+      
+      // 检查返回的数据是否有错误
+      if (users && users.error) {
+        console.error("API返回错误:", users.error);
+        tbody.innerHTML = `<tr><td colspan="9" class="loading">加载失败: ${users.error}</td></tr>`;
+        return;
+      }
       
     tbody.innerHTML = '';
       

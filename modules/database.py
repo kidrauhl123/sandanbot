@@ -237,6 +237,14 @@ def init_postgres_db():
         c.execute("ALTER TABLE users ADD COLUMN credit_limit REAL DEFAULT 0")
         conn.commit()
     
+    # 检查users表是否需要添加last_login列
+    try:
+        c.execute("SELECT last_login FROM users LIMIT 1")
+    except psycopg2.errors.UndefinedColumn:
+        logger.info("为users表添加last_login列")
+        c.execute("ALTER TABLE users ADD COLUMN last_login TEXT")
+        conn.commit()
+    
     # 检查orders表是否需要添加缺失的列
     try:
         c.execute("SELECT package FROM orders LIMIT 1")
