@@ -1,322 +1,260 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <title>用户注册 - 优图充值系统</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        * { box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .register-container {
-            background: rgba(255,255,255,0.95);
-            padding: 40px;
-            border-radius: 15px;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
-            width: 100%;
-            max-width: 450px;
-            backdrop-filter: blur(10px);
-        }
-        
-        .register-header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        
-        .register-header h1 {
-            color: #333;
-            margin: 0 0 10px 0;
-            font-size: 28px;
-            font-weight: 600;
-        }
-        
-        .register-header p {
-            color: #666;
-            margin: 0;
-            font-size: 14px;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 600;
-            color: #555;
-            font-size: 14px;
-        }
-        
-        .form-control {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e1e5e9;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: all 0.3s ease;
-            background-color: rgba(255,255,255,0.8);
-        }
-        
-        .form-control:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102,126,234,0.2);
-            background-color: #fff;
-        }
-        
-        .submit-btn {
-            width: 100%;
-            padding: 15px;
-            font-size: 16px;
-            font-weight: 600;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 5px 15px rgba(102,126,234,0.4);
-        }
-        
-        .submit-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102,126,234,0.6);
-        }
-        
-        .submit-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .register-links {
-            text-align: center;
-            margin-top: 20px;
-        }
-        
-        .register-links a {
-            color: #667eea;
-            text-decoration: none;
-            font-size: 14px;
-            margin: 0 10px;
-        }
-        
-        .register-links a:hover {
-            text-decoration: underline;
-        }
-        
-        .alert {
-            padding: 12px 15px;
-            margin-bottom: 20px;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-        
-        .alert-error {
-            background-color: #fee;
-            color: #c33;
-            border: 1px solid #fcc;
-        }
-        
-        .alert-success {
-            background-color: #efe;
-            color: #383;
-            border: 1px solid #cfc;
-        }
-        
-        .password-hint {
-            font-size: 12px;
-            color: #666;
-            margin-top: 5px;
-        }
-        
-        .password-strength {
-            margin-top: 5px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-        
-        .strength-weak { color: #dc3545; }
-        .strength-medium { color: #ffc107; }
-        .strength-strong { color: #28a745; }
-        
-        .terms-notice {
-            background: rgba(255,255,255,0.9);
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 20px;
-            border-left: 4px solid #667eea;
-            font-size: 13px;
-            color: #666;
-        }
-    </style>
+  <meta charset="utf-8">
+  <title>注册 - 破天充值系统</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: 'Microsoft YaHei', Arial, sans-serif; 
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      margin: 0; 
+      padding: 0; 
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .register-container { 
+      background: rgba(255,255,255,0.95); 
+      padding: 40px; 
+      border-radius: 15px; 
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1); 
+      width: 100%; 
+      max-width: 400px;
+      backdrop-filter: blur(10px);
+    }
+    .register-container h2 { 
+      text-align: center; 
+      font-size: 28px; 
+      margin-bottom: 30px; 
+      color: #333;
+      font-weight: 300;
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .logo span {
+      font-size: 48px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: bold;
+    }
+    .form-group { 
+      margin-bottom: 20px; 
+    }
+    .form-group label { 
+      font-weight: 600; 
+      display: block; 
+      color: #555;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+    .form-group input {
+      width: 100%; 
+      padding: 12px 15px; 
+      border-radius: 8px; 
+      border: 2px solid #e1e5e9; 
+      font-size: 14px;
+      transition: all 0.3s ease;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+    }
+    .form-group input.error {
+      border-color: #dc3545;
+    }
+    .form-group .hint {
+      font-size: 12px;
+      color: #999;
+      margin-top: 5px;
+    }
+    .error-message {
+      background: #fee;
+      color: #c33;
+      padding: 10px 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      text-align: center;
+    }
+    .form-button { 
+      width: 100%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white; 
+      border: none; 
+      cursor: pointer; 
+      font-weight: 600;
+      padding: 15px;
+      font-size: 16px;
+      border-radius: 8px;
+      margin-top: 10px;
+      transition: all 0.3s ease;
+    }
+    .form-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102,126,234,0.4);
+    }
+    .form-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .links {
+      text-align: center;
+      margin-top: 20px;
+    }
+    .links a {
+      color: #667eea;
+      text-decoration: none;
+      font-size: 14px;
+      transition: color 0.3s ease;
+    }
+    .links a:hover {
+      color: #764ba2;
+      text-decoration: underline;
+    }
+    .divider {
+      text-align: center;
+      margin: 20px 0;
+      color: #999;
+      font-size: 14px;
+    }
+    .password-strength {
+      height: 4px;
+      background: #eee;
+      border-radius: 2px;
+      margin-top: 5px;
+      overflow: hidden;
+    }
+    .password-strength-bar {
+      height: 100%;
+      width: 0;
+      transition: all 0.3s ease;
+    }
+    .strength-weak { background: #dc3545; width: 33%; }
+    .strength-medium { background: #ffc107; width: 66%; }
+    .strength-strong { background: #28a745; width: 100%; }
+    @media (max-width: 480px) {
+      .register-container {
+        margin: 20px;
+        padding: 30px 20px;
+      }
+    }
+  </style>
 </head>
 <body>
-    <div class="register-container">
-        <div class="register-header">
-            <h1><i class="fas fa-user-plus"></i> 用户注册</h1>
-            <p>创建您的优图充值系统账户</p>
-        </div>
-        
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ 'error' if category == 'error' else 'success' }}">
-                        <i class="fas fa-{{ 'exclamation-triangle' if category == 'error' else 'check-circle' }}"></i>
-                        {{ message }}
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-        
-        <form method="POST" id="registerForm">
-            <div class="form-group">
-                <label for="username"><i class="fas fa-user"></i> 用户名</label>
-                <input type="text" id="username" name="username" class="form-control" required autofocus 
-                       minlength="3" maxlength="20" pattern="[a-zA-Z0-9_]+" 
-                       title="用户名只能包含字母、数字和下划线，长度3-20位">
-                <div class="password-hint">用户名长度3-20位，只能包含字母、数字和下划线</div>
-            </div>
-            
-            <div class="form-group">
-                <label for="email"><i class="fas fa-envelope"></i> 邮箱地址</label>
-                <input type="email" id="email" name="email" class="form-control" required>
-                <div class="password-hint">用于找回密码和接收重要通知</div>
-            </div>
-            
-            <div class="form-group">
-                <label for="password"><i class="fas fa-lock"></i> 密码</label>
-                <input type="password" id="password" name="password" class="form-control" required minlength="6">
-                <div id="passwordStrength" class="password-strength"></div>
-                <div class="password-hint">密码长度至少6位，建议包含字母和数字</div>
-            </div>
-            
-            <div class="form-group">
-                <label for="confirmPassword"><i class="fas fa-lock"></i> 确认密码</label>
-                <input type="password" id="confirmPassword" name="confirm_password" class="form-control" required>
-                <div id="passwordMatch" class="password-strength"></div>
-            </div>
-            
-            <button type="submit" class="submit-btn" id="registerBtn">
-                <i class="fas fa-user-plus"></i> 注册账户
-            </button>
-        </form>
-        
-        <div class="register-links">
-            <a href="{{ url_for('login') }}">已有账号？立即登录</a>
-            <span>|</span>
-            <a href="{{ url_for('index') }}">返回首页</a>
-        </div>
-        
-        <div class="terms-notice">
-            <i class="fas fa-info-circle"></i>
-            注册即表示您同意我们的使用条款。注册后，您可以立即开始使用充值服务。
-        </div>
+<div class="register-container">
+  <div class="logo">
+    <span>破天</span>
+  </div>
+  <h2>用户注册</h2>
+  
+  {% if error %}
+  <div class="error-message">{{ error }}</div>
+  {% endif %}
+  
+  <form method="POST" id="registerForm">
+    <div class="form-group">
+      <label>用户名</label>
+      <input type="text" name="username" required autofocus placeholder="请输入用户名" minlength="3">
+      <div class="hint">至少3个字符，只能包含字母、数字和下划线</div>
     </div>
     
-    <script>
-        // 密码强度检查
-        document.getElementById('password').addEventListener('input', function() {
-            const password = this.value;
-            const strengthDiv = document.getElementById('passwordStrength');
-            
-            if (password.length === 0) {
-                strengthDiv.textContent = '';
-                return;
-            }
-            
-            let strength = 0;
-            if (password.length >= 6) strength++;
-            if (/[a-z]/.test(password)) strength++;
-            if (/[A-Z]/.test(password)) strength++;
-            if (/[0-9]/.test(password)) strength++;
-            if (/[^A-Za-z0-9]/.test(password)) strength++;
-            
-            if (strength < 2) {
-                strengthDiv.textContent = '密码强度：弱';
-                strengthDiv.className = 'password-strength strength-weak';
-            } else if (strength < 4) {
-                strengthDiv.textContent = '密码强度：中等';
-                strengthDiv.className = 'password-strength strength-medium';
-            } else {
-                strengthDiv.textContent = '密码强度：强';
-                strengthDiv.className = 'password-strength strength-strong';
-            }
-        });
-        
-        // 密码确认检查
-        document.getElementById('confirmPassword').addEventListener('input', function() {
-            const password = document.getElementById('password').value;
-            const confirmPassword = this.value;
-            const matchDiv = document.getElementById('passwordMatch');
-            
-            if (confirmPassword.length === 0) {
-                matchDiv.textContent = '';
-                return;
-            }
-            
-            if (password === confirmPassword) {
-                matchDiv.textContent = '✓ 密码匹配';
-                matchDiv.className = 'password-strength strength-strong';
-            } else {
-                matchDiv.textContent = '✗ 密码不匹配';
-                matchDiv.className = 'password-strength strength-weak';
-            }
-        });
-        
-        // 表单提交处理
-        document.getElementById('registerForm').addEventListener('submit', function(e) {
-            const password = document.getElementById('password').value;
-            const confirmPassword = document.getElementById('confirmPassword').value;
-            const username = document.getElementById('username').value;
-            
-            // 验证密码匹配
-            if (password !== confirmPassword) {
-                e.preventDefault();
-                alert('两次输入的密码不一致！');
-                return false;
-            }
-            
-            // 验证用户名格式
-            if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
-                e.preventDefault();
-                alert('用户名格式不正确！只能包含字母、数字和下划线，长度3-20位。');
-                return false;
-            }
-            
-            const btn = document.getElementById('registerBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 注册中...';
-            
-            // 如果注册失败，恢复按钮状态
-            setTimeout(function() {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-user-plus"></i> 注册账户';
-            }, 5000);
-        });
-        
-        // 实时验证用户名格式
-        document.getElementById('username').addEventListener('input', function() {
-            const username = this.value;
-            const isValid = /^[a-zA-Z0-9_]*$/.test(username);
-            
-            if (!isValid && username.length > 0) {
-                this.style.borderColor = '#dc3545';
-            } else {
-                this.style.borderColor = '#e1e5e9';
-            }
-        });
-    </script>
+    <div class="form-group">
+      <label>密码</label>
+      <input type="password" name="password" id="password" required placeholder="请输入密码" minlength="6">
+      <div class="hint">至少6个字符</div>
+      <div class="password-strength">
+        <div class="password-strength-bar" id="strengthBar"></div>
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <label>确认密码</label>
+      <input type="password" name="password_confirm" id="passwordConfirm" required placeholder="请再次输入密码">
+      <div class="hint" id="confirmHint"></div>
+    </div>
+    
+    <button type="submit" class="form-button" id="submitBtn">注册</button>
+  </form>
+  
+  <div class="divider">——— 或 ———</div>
+  
+  <div class="links">
+    <a href="/login">已有账号？立即登录</a>
+  </div>
+</div>
+
+<script>
+  // 密码强度检测
+  document.getElementById('password').addEventListener('input', function(e) {
+    const password = e.target.value;
+    const strengthBar = document.getElementById('strengthBar');
+    
+    if (password.length < 6) {
+      strengthBar.className = 'password-strength-bar';
+    } else if (password.length < 10 || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+      strengthBar.className = 'password-strength-bar strength-weak';
+    } else if (password.length < 12 || !/[!@#$%^&*]/.test(password)) {
+      strengthBar.className = 'password-strength-bar strength-medium';
+    } else {
+      strengthBar.className = 'password-strength-bar strength-strong';
+    }
+    
+    // 检查密码确认
+    checkPasswordMatch();
+  });
+  
+  // 密码确认匹配检测
+  document.getElementById('passwordConfirm').addEventListener('input', checkPasswordMatch);
+  
+  function checkPasswordMatch() {
+    const password = document.getElementById('password').value;
+    const passwordConfirm = document.getElementById('passwordConfirm').value;
+    const confirmHint = document.getElementById('confirmHint');
+    const confirmInput = document.getElementById('passwordConfirm');
+    
+    if (passwordConfirm === '') {
+      confirmHint.textContent = '';
+      confirmInput.classList.remove('error');
+    } else if (password === passwordConfirm) {
+      confirmHint.textContent = '密码匹配';
+      confirmHint.style.color = '#28a745';
+      confirmInput.classList.remove('error');
+    } else {
+      confirmHint.textContent = '密码不匹配';
+      confirmHint.style.color = '#dc3545';
+      confirmInput.classList.add('error');
+    }
+  }
+  
+  // 表单提交处理
+  document.getElementById('registerForm').addEventListener('submit', function(e) {
+    const password = document.getElementById('password').value;
+    const passwordConfirm = document.getElementById('passwordConfirm').value;
+    
+    if (password !== passwordConfirm) {
+      e.preventDefault();
+      alert('两次输入的密码不一致！');
+      return false;
+    }
+    
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = '注册中...';
+  });
+  
+  // 自动聚焦
+  window.onload = function() {
+    document.querySelector('input[name="username"]').focus();
+  };
+</script>
+
 </body>
-</html> 
+</html>
