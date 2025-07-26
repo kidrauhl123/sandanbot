@@ -202,6 +202,11 @@ def init_sqlite_db():
         logger.info("为users表添加password_hash列")
         c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
     
+    # 检查是否需要添加is_admin列
+    if 'is_admin' not in users_columns:
+        logger.info("为users表添加is_admin列")
+        c.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+    
     # 检查是否需要添加balance列（用户余额）
     if 'balance' not in users_columns:
         logger.info("为users表添加balance列")
@@ -362,6 +367,30 @@ def init_postgres_db():
             logger.info("为users表添加password_hash列")
             c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
             conn.commit()
+    
+    # 检查users表是否需要添加is_admin列
+    try:
+        c.execute("SELECT is_admin FROM users LIMIT 1")
+    except psycopg2.errors.UndefinedColumn:
+        logger.info("为users表添加is_admin列")
+        c.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+        conn.commit()
+    
+    # 检查users表是否需要添加balance列
+    try:
+        c.execute("SELECT balance FROM users LIMIT 1")
+    except psycopg2.errors.UndefinedColumn:
+        logger.info("为users表添加balance列")
+        c.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0")
+        conn.commit()
+    
+    # 检查users表是否需要添加credit_limit列
+    try:
+        c.execute("SELECT credit_limit FROM users LIMIT 1")
+    except psycopg2.errors.UndefinedColumn:
+        logger.info("为users表添加credit_limit列")
+        c.execute("ALTER TABLE users ADD COLUMN credit_limit REAL DEFAULT 0")
+        conn.commit()
     
     # 创建超级管理员账号（如果不存在）
     admin_hash = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
