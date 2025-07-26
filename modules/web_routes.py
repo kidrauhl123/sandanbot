@@ -710,10 +710,18 @@ def register_routes(app, notification_queue):
                     username = user[1]
                     
                     # 查询该用户今日已完成订单的消费总额
-                    today_orders = execute_query("""
-                        SELECT package FROM orders 
-                        WHERE web_user_id = ? AND created_at LIKE ? AND status = 'completed'
-                    """, (username, today), fetch=True)
+                    if DATABASE_URL and DATABASE_URL.startswith('postgres'):
+                        # PostgreSQL: 使用DATE函数比较日期
+                        today_orders = execute_query("""
+                            SELECT package FROM orders 
+                            WHERE web_user_id = %s AND DATE(created_at) = CURRENT_DATE AND status = 'completed'
+                        """, (username,), fetch=True)
+                    else:
+                        # SQLite: 使用LIKE进行字符串匹配
+                        today_orders = execute_query("""
+                            SELECT package FROM orders 
+                            WHERE web_user_id = ? AND created_at LIKE ? AND status = 'completed'
+                        """, (username, today), fetch=True)
                     
                     # 计算总消费额
                     today_consumption = 0
