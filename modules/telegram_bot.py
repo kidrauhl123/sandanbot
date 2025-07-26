@@ -28,6 +28,9 @@ from modules.constants import (
     BOT_TOKEN, STATUS, PLAN_LABELS_EN,
     STATUS_TEXT_ZH, TG_PRICES, WEB_PRICES, SELLER_CHAT_IDS, DATABASE_URL
 )
+
+# 全局响应存储 - 供web端和TG端共享
+global_seller_responses = {}
 from modules.database import (
     get_order_details, execute_query, 
     get_unnotified_orders, get_active_seller_ids,
@@ -1033,6 +1036,7 @@ async def on_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("availability_accept_"):
         # 处理可用性检查的ACCEPT响应
         username = data.replace('availability_accept_', '')
+        logger.info(f"收到可用性ACCEPT回调: user_id={user_id}, username={username}, data={data}")
         await handle_availability_accept(query, user_id, username)
         
     elif data.startswith("feedback:"):
@@ -1450,9 +1454,9 @@ async def send_availability_check(telegram_id, username):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         message = (
-            f"🔔 *Availability Check* 🔔\n\n"
-            f"User *{username}* wants to submit orders and is checking if you are online.\n\n"
-            f"Please click ACCEPT if you are available to process orders right now."
+            f"🔔 *Online Check* 🔔\n\n"
+            f"User *{username}* is checking seller availability.\n\n"
+            f"Click ACCEPT if you're online and ready to take orders."
         )
         
         if bot_application and bot_application.bot:
@@ -1472,42 +1476,32 @@ async def send_availability_check(telegram_id, username):
 async def handle_availability_accept(query, telegram_id, username):
     """处理卖家的可用性确认响应"""
     try:
-        # 发送确认响应到web端
-        import requests
-        import asyncio
+        logger.info(f"处理卖家 {telegram_id} 对用户 {username} 的可用性确认")
         
-        # 这里需要调用web端的API来记录卖家响应
-        # 由于我们在异步环境中，需要使用aiohttp或者在新线程中使用requests
-        def send_response():
-            try:
-                import requests
-                response = requests.post(
-                    'http://localhost:5000/api/seller-availability-response',
-                    json={
-                        'telegram_id': str(telegram_id),
-                        'username': username
-                    },
-                    timeout=5
-                )
-                logger.info(f"卖家响应已发送到web端: {response.status_code}")
-            except Exception as e:
-                logger.error(f"发送卖家响应到web端失败: {str(e)}")
-        
-        # 在新线程中执行HTTP请求
-        import threading
-        threading.Thread(target=send_response, daemon=True).start()
+        # 使用全局变量记录响应
+        try:
+            global global_seller_responses
+            
+            if username not in global_seller_responses:
+                global_seller_responses[username] = {}
+            
+            global_seller_responses[username][str(telegram_id)] = True
+            logger.info(f"记录卖家响应: {telegram_id} -> {username}")
+            logger.info(f"当前全局响应: {global_seller_responses}")
+                
+        except Exception as storage_error:
+            logger.error(f"存储卖家响应失败: {str(storage_error)}")
         
         # 更新消息内容
         await query.edit_message_text(
-            "✅ *Availability Confirmed* ✅\n\n"
-            f"Thank you for confirming your availability!\n"
-            f"User *{username}* has been notified that you are online.",
+            "✅ *Confirmed Online* ✅\n\n"
+            f"Thank you! User *{username}* will be notified.",
             parse_mode='Markdown'
         )
         
-        await query.answer("Availability confirmed!", show_alert=False)
-        logger.info(f"卖家 {telegram_id} 确认了对用户 {username} 的可用性")
+        await query.answer("Confirmed!", show_alert=False)
+        logger.info(f"卖家 {telegram_id} 成功确认了对用户 {username} 的可用性")
         
     except Exception as e:
         logger.error(f"处理可用性确认失败: {str(e)}", exc_info=True)
-        await query.answer("确认失败，请重试", show_alert=True)
+        await query.answer("Error occurred, please try again", show_alert=True)

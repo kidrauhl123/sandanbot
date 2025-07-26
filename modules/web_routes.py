@@ -1387,9 +1387,9 @@ def register_routes(app, notification_queue):
                 return jsonify({"error": "当前没有活跃的卖家"}), 400
             
             # 清空之前的响应记录
-            if not hasattr(app, 'seller_responses'):
-                app.seller_responses = {}
-            app.seller_responses[username] = {}
+            from modules.telegram_bot import global_seller_responses
+            global_seller_responses[username] = {}
+            logger.info(f"已清空用户 {username} 的历史响应记录")
             
             # 发送TG通知给所有活跃卖家
             from modules.telegram_bot import send_availability_check
@@ -1445,7 +1445,9 @@ def register_routes(app, notification_queue):
                 return jsonify({"error": "缺少用户名"}), 400
             
             # 从全局存储中获取响应
-            responses = getattr(app, 'seller_responses', {}).get(username, {})
+            from modules.telegram_bot import global_seller_responses
+            responses = global_seller_responses.get(username, {})
+            logger.info(f"获取用户 {username} 的卖家响应: {responses}")
             
             # 获取响应的卖家信息
             active_sellers = []
@@ -1469,35 +1471,7 @@ def register_routes(app, notification_queue):
             logger.error(f"获取卖家响应失败: {str(e)}", exc_info=True)
             return jsonify({"error": "获取响应失败"}), 500
 
-    @app.route('/api/seller-availability-response', methods=['POST'])
-    def seller_availability_response():
-        """处理卖家的可用性响应"""
-        try:
-            data = request.get_json()
-            telegram_id = data.get('telegram_id')
-            username = data.get('username')
-            
-            if not telegram_id or not username:
-                return jsonify({"error": "缺少参数"}), 400
-            
-            # 这里应该通过某种方式找到对应的用户session
-            # 由于HTTP的无状态性，我们需要一个全局的存储方式
-            # 暂时使用内存存储，生产环境应该使用Redis等
-            if not hasattr(app, 'seller_responses'):
-                app.seller_responses = {}
-            
-            if username not in app.seller_responses:
-                app.seller_responses[username] = {}
-            
-            app.seller_responses[username][telegram_id] = True
-            
-            logger.info(f"卖家 {telegram_id} 响应了用户 {username} 的可用性检查")
-            
-            return jsonify({"success": True})
-            
-        except Exception as e:
-            logger.error(f"处理卖家响应失败: {str(e)}", exc_info=True)
-            return jsonify({"error": "处理失败"}), 500
+
 
     @app.route('/admin/api/sellers/toggle_admin', methods=['POST'])
     @login_required
