@@ -760,6 +760,15 @@
       background: rgba(102,126,234,0.05);
     }
     
+    /* 备注编辑样式 */
+    .remark-cell:hover .remark-edit-icon {
+      display: inline !important;
+    }
+    
+    .remark-cell {
+      position: relative;
+    }
+    
     .detail-btn {
       background: rgba(102,126,234,0.1);
       color: #667eea;
@@ -1188,6 +1197,44 @@
   // 用户实际价格（会被API获取的价格覆盖）
   let USER_PRICES = {...WEB_PRICES};
   
+  // 编辑备注功能
+  function editRemark(orderId, currentRemark) {
+    const newRemark = prompt('请输入新的备注:', currentRemark);
+    if (newRemark !== null && newRemark !== currentRemark) {
+      updateOrderRemark(orderId, newRemark);
+    }
+  }
+  
+  // 更新订单备注
+  async function updateOrderRemark(orderId, newRemark) {
+    try {
+      const response = await fetch(`/api/orders/${orderId}/remark`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ remark: newRemark })
+      });
+      
+      if (response.ok) {
+        // 更新界面显示
+        const remarkCell = document.querySelector(`[data-order-id="${orderId}"] .remark-text`);
+        if (remarkCell) {
+          remarkCell.textContent = newRemark;
+        }
+        showAlert('备注更新成功', 'success');
+        // 刷新订单列表
+        loadOrders();
+      } else {
+        const result = await response.json();
+        showAlert(result.error || '更新失败', 'error');
+      }
+    } catch (error) {
+      console.error('更新备注失败:', error);
+      showAlert('网络错误，请重试', 'error');
+    }
+  }
+
   // 加载用户定制价格
   async function loadUserPrices() {
     try {
@@ -1989,6 +2036,7 @@
             <th>YouTube</th>
             <th>状态</th>
             <th>备注</th>
+            <th>接单者</th>
             <th>提交时间</th>
             <th>完成时间</th>
             <th>操作</th>
@@ -2005,7 +2053,11 @@
           <td>${o.id}</td>
           <td>${o.account.includes('uploads') ? `<a href="/${o.account}" target="_blank">查看二维码</a>` : '未上传二维码'}</td>
           <td><span class="status-badge ${cls}">${o.status_text}</span></td>
-          <td><strong>${escapeHtml(o.remark || '')}</strong></td>
+          <td class="remark-cell" data-order-id="${o.id}">
+            <span class="remark-text">${escapeHtml(o.remark || '')}</span>
+            <i class="fas fa-pen remark-edit-icon" style="display:none;margin-left:8px;cursor:pointer;color:#667eea;" onclick="editRemark(${o.id}, '${escapeHtml(o.remark || '').replace(/'/g, "\\'")}')"></i>
+          </td>
+          <td>${o.accepted_by || '-'}</td>
           <td>${formatDateTime(o.created_at)}</td>
           <td>${o.completed_at ? formatDateTime(o.completed_at) : '-'}</td>
           <td>

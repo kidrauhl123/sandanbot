@@ -1106,6 +1106,39 @@ def register_routes(app, notification_queue):
             logger.error(f"更新价格配置失败: {str(e)}", exc_info=True)
             return jsonify({"success": False, "error": f"更新价格配置失败: {str(e)}"}), 500
 
+    # 更新订单备注的API
+    @app.route('/api/orders/<int:order_id>/remark', methods=['PUT'])
+    @login_required
+    def update_order_remark(order_id):
+        """更新订单备注"""
+        try:
+            data = request.get_json()
+            new_remark = data.get('remark', '')
+            
+            # 检查订单是否存在且属于当前用户
+            order = execute_query("SELECT user_id, web_user_id FROM orders WHERE id=%s", (order_id,), fetch=True)
+            if not order:
+                return jsonify({"error": "订单不存在"}), 404
+            
+            user_id, web_user_id = order[0]
+            current_user_id = session.get('user_id')
+            current_username = session.get('username')
+            is_admin = session.get('is_admin')
+            
+            # 检查权限：管理员或订单所有者可以修改
+            if not is_admin and current_user_id != user_id and current_username != web_user_id:
+                return jsonify({"error": "无权限修改此订单"}), 403
+            
+            # 更新备注
+            execute_query("UPDATE orders SET remark=%s WHERE id=%s", (new_remark, order_id))
+            
+            logger.info(f"用户 {current_username} 更新了订单 {order_id} 的备注")
+            return jsonify({"success": True, "message": "备注更新成功"})
+            
+        except Exception as e:
+            logger.error(f"更新订单备注失败: {str(e)}", exc_info=True)
+            return jsonify({"error": "更新失败，请重试"}), 500
+
     @app.route('/admin/api/sellers', methods=['POST'])
     @login_required
     @admin_required
