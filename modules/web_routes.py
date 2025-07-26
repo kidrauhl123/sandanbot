@@ -59,7 +59,7 @@ def register_routes(app, notification_queue):
                 
             # 验证用户
             hashed_password = hash_password(password)
-            user = execute_query("SELECT id, username, is_admin FROM users WHERE username=? AND password_hash=?",
+            user = execute_query("SELECT id, username, is_admin FROM users WHERE username=%s AND password_hash=%s",
                             (username, hashed_password), fetch=True)
             
             if user:
@@ -69,7 +69,7 @@ def register_routes(app, notification_queue):
                 session['is_admin'] = is_admin
                 
                 # 更新最后登录时间
-                execute_query("UPDATE users SET last_login=? WHERE id=?",
+                execute_query("UPDATE users SET last_login=%s WHERE id=%s",
                             (get_china_time(), user_id))
                 
                 logger.info(f"用户 {username} 登录成功")
@@ -113,7 +113,7 @@ def register_routes(app, notification_queue):
                 return render_template('register.html', error='两次密码输入不一致')
             
             # 检查用户名是否已存在
-            existing_user = execute_query("SELECT id FROM users WHERE username=?", (username,), fetch=True)
+            existing_user = execute_query("SELECT id FROM users WHERE username=%s", (username,), fetch=True)
             if existing_user:
                 return render_template('register.html', error='用户名已存在')
             
@@ -558,7 +558,7 @@ def register_routes(app, notification_queue):
             return jsonify({"error": "只能取消待处理的订单"}), 400
             
         # 更新订单状态为已取消
-        execute_query("UPDATE orders SET status=? WHERE id=?", 
+        execute_query("UPDATE orders SET status=%s WHERE id=%s", 
                       (STATUS['CANCELLED'], oid))
         
         logger.info(f"订单已取消: ID={oid}")
@@ -601,7 +601,7 @@ def register_routes(app, notification_queue):
             return jsonify({"error": "只能质疑已完成的订单"}), 400
             
         # 更新订单状态为正在质疑
-        execute_query("UPDATE orders SET status=? WHERE id=?", 
+        execute_query("UPDATE orders SET status=%s WHERE id=%s", 
                       (STATUS['DISPUTING'], oid))
         
         logger.info(f"订单已被质疑: ID={oid}, 用户ID={user_id}")
@@ -811,7 +811,7 @@ def register_routes(app, notification_queue):
         """获取用户定制价格（仅限管理员）"""
         try:
             # 获取用户信息
-            user = execute_query("SELECT username FROM users WHERE id=?", (user_id,), fetch=True)
+            user = execute_query("SELECT username FROM users WHERE id=%s", (user_id,), fetch=True)
             if not user:
                 return jsonify({"error": "用户不存在"}), 404
                 
@@ -864,7 +864,7 @@ def register_routes(app, notification_queue):
             return jsonify({"error": f"无效的套餐: {package}"}), 400
             
         # 检查用户是否存在
-        user = execute_query("SELECT username FROM users WHERE id=?", (user_id,), fetch=True)
+        user = execute_query("SELECT username FROM users WHERE id=%s", (user_id,), fetch=True)
         if not user:
             return jsonify({"error": "用户不存在"}), 404
             
@@ -1004,6 +1004,64 @@ def register_routes(app, notification_queue):
             "is_admin": bool(s[7])
         } for s in sellers])
 
+    @app.route('/admin/api/prices', methods=['GET'])
+    @login_required
+    @admin_required
+    def admin_api_get_prices():
+        """获取价格配置（仅限管理员）"""
+        try:
+            return jsonify({
+                "success": True,
+                "web_prices": WEB_PRICES,
+                "tg_prices": TG_PRICES
+            })
+        except Exception as e:
+            logger.error(f"获取价格配置失败: {str(e)}", exc_info=True)
+            return jsonify({"success": False, "error": f"获取价格配置失败: {str(e)}"}), 500
+
+    @app.route('/admin/api/prices', methods=['POST'])
+    @login_required
+    @admin_required
+    def admin_api_update_prices():
+        """更新价格配置（仅限管理员）"""
+        try:
+            data = request.get_json()
+            package = data.get('package')
+            web_price = data.get('web_price')
+            tg_price = data.get('tg_price')
+            
+            if not package:
+                return jsonify({"success": False, "error": "缺少package参数"}), 400
+            
+            if web_price is None or tg_price is None:
+                return jsonify({"success": False, "error": "缺少价格参数"}), 400
+            
+            try:
+                web_price = float(web_price)
+                tg_price = float(tg_price)
+            except ValueError:
+                return jsonify({"success": False, "error": "价格必须为数字"}), 400
+            
+            if web_price < 0 or tg_price < 0:
+                return jsonify({"success": False, "error": "价格不能为负数"}), 400
+            
+            # 更新价格配置（注意：这里只是更新内存中的配置，重启后会重置）
+            WEB_PRICES[package] = web_price
+            TG_PRICES[package] = tg_price
+            
+            logger.info(f"管理员 {session.get('username')} 更新了价格配置: {package}个月 - 网页端: ${web_price}, 卖家薪资: ${tg_price}")
+            
+            return jsonify({
+                "success": True,
+                "message": "价格更新成功",
+                "web_prices": WEB_PRICES,
+                "tg_prices": TG_PRICES
+            })
+            
+        except Exception as e:
+            logger.error(f"更新价格配置失败: {str(e)}", exc_info=True)
+            return jsonify({"success": False, "error": f"更新价格配置失败: {str(e)}"}), 500
+
     @app.route('/admin/api/sellers', methods=['POST'])
     @login_required
     @admin_required
@@ -1130,7 +1188,7 @@ def register_routes(app, notification_queue):
         data = request.json
         
         # 获取当前订单信息
-        order = execute_query("SELECT status, user_id, package, refunded FROM orders WHERE id=?", (order_id,), fetch=True)
+        order = execute_query("SELECT status, user_id, package, refunded FROM orders WHERE id=%s", (order_id,), fetch=True)
         if not order:
             return jsonify({"error": "订单不存在"}), 404
         
@@ -2048,7 +2106,7 @@ def register_routes(app, notification_queue):
         try:
             # 更新状态
             timestamp = get_china_time()
-            execute_query("UPDATE orders SET status=?, completed_at=? WHERE id= ?", 
+            execute_query("UPDATE orders SET status=%s, completed_at=%s WHERE id=%s", 
                          (STATUS['COMPLETED'], timestamp, oid))
             logger.info(f"用户 {user_id} 确认订单 {oid} 收货成功，状态已更新为已完成")
 

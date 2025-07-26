@@ -488,6 +488,7 @@
         <li><a href="#users" class="active" onclick="showTab('users'); return false;"><i class="fas fa-users"></i> 用户管理</a></li>
         <li><a href="#orders" onclick="showTab('orders'); return false;"><i class="fas fa-file-invoice-dollar"></i> 订单管理</a></li>
         <li><a href="#sellers" onclick="showTab('sellers'); return false;"><i class="fas fa-user-tie"></i> 卖家管理</a></li>
+        <li><a href="#prices" onclick="showTab('prices'); return false;"><i class="fas fa-dollar-sign"></i> 价格管理</a></li>
         <li><a href="#balance" onclick="showTab('balance'); return false;"><i class="fas fa-money-bill-wave"></i> 余额明细</a></li>
         <li><a href="/admin/recharge-requests"><i class="fas fa-credit-card"></i> 充值管理</a></li>
         <li><a href="/admin/activation-codes"><i class="fas fa-key"></i> 激活码管理</a></li>
@@ -595,6 +596,38 @@
         </div>
       </div>
       
+      <!-- 价格管理 -->
+      <div id="prices" class="tab-content">
+        <div class="content-header">
+          <h2><i class="fas fa-dollar-sign"></i> 价格管理</h2>
+        </div>
+        <div class="prices-container">
+          <div class="section">
+            <h3>默认价格设置</h3>
+            <div class="price-settings">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>套餐</th>
+                    <th>当前价格 (USDT)</th>
+                    <th>卖家薪资 (USDT)</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="default-prices-tbody">
+                  <!-- 价格数据会通过JS动态加载 -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          <div class="section">
+            <h3>用户定制价格</h3>
+            <p>用户定制价格可在用户管理页面中为每个用户单独设置</p>
+          </div>
+        </div>
+      </div>
+
       <!-- 余额明细管理 -->
       <div id="balance" class="tab-content">
         <div class="content-header">
@@ -861,6 +894,10 @@
       loadSellers();
       sellerDataLoaded = true;
     }
+    else if (tabId === 'prices' && !priceDataLoaded) {
+      loadPrices();
+      priceDataLoaded = true;
+    }
     else if (tabId === 'balance' && !balanceDataLoaded) {
       loadBalanceRecords();
       populateUserFilter();
@@ -872,6 +909,7 @@
   let userDataLoaded = false;
   let orderDataLoaded = false;
   let sellerDataLoaded = false;
+  let priceDataLoaded = false;
   let balanceDataLoaded = false;
   let allUsers = []; // 存储所有用户数据
   let allOrders = [];
@@ -1674,6 +1712,10 @@
       loadSellers();
       showTab('sellers');
     });
+    document.querySelector('.sidebar-menu a[href="#prices"]').addEventListener('click', function() {
+      loadPrices();
+      showTab('prices');
+    });
     document.querySelector('.sidebar-menu a[href="#balance"]').addEventListener('click', function() {
       loadBalanceRecords();
       populateUserFilter();
@@ -1950,6 +1992,105 @@
       option.textContent = `${user.username} (ID: ${user.id})`;
       selectElement.appendChild(option);
     });
+  }
+
+  // 加载价格管理数据
+  async function loadPrices() {
+    console.log("开始加载价格数据...");
+    const tbody = document.getElementById('default-prices-tbody');
+    tbody.innerHTML = '<tr><td colspan="4" class="loading">加载中...</td></tr>';
+    
+    try {
+      // 获取当前价格配置
+      const response = await fetch('/admin/api/prices');
+      if (!response.ok) throw new Error(`获取价格数据失败: ${response.status}`);
+      
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || '获取价格数据失败');
+      
+      const webPrices = data.web_prices || {};
+      const tgPrices = data.tg_prices || {};
+      
+      if (Object.keys(webPrices).length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="no-data">暂无价格数据</td></tr>';
+        return;
+      }
+      
+      // 渲染价格数据
+      let html = '';
+      for (const [package, price] of Object.entries(webPrices)) {
+        const tgPrice = tgPrices[package] || 0;
+        const packageName = getPackageName(package);
+        
+        html += `
+          <tr>
+            <td>${packageName}</td>
+            <td>$${price}</td>
+            <td>$${tgPrice}</td>
+            <td>
+              <button class="btn btn-small btn-primary" onclick="editPrice('${package}', ${price}, ${tgPrice})">
+                <i class="fas fa-edit"></i> 修改
+              </button>
+            </td>
+          </tr>
+        `;
+      }
+      
+      tbody.innerHTML = html;
+      console.log("价格数据加载完成");
+    } catch (error) {
+      console.error('加载价格数据失败:', error);
+      tbody.innerHTML = `<tr><td colspan="4" class="error">加载失败: ${error.message}</td></tr>`;
+    }
+  }
+  
+  // 获取套餐名称
+  function getPackageName(package) {
+    const names = {
+      '1': '1个月',
+      '2': '2个月', 
+      '3': '3个月',
+      '6': '6个月',
+      '12': '12个月'
+    };
+    return names[package] || `${package}个月`;
+  }
+  
+  // 编辑价格
+  async function editPrice(package, currentWebPrice, currentTgPrice) {
+    const packageName = getPackageName(package);
+    
+    const newWebPrice = prompt(`请输入${packageName}的新网页端价格 (USDT):`, currentWebPrice);
+    if (newWebPrice === null) return;
+    
+    const newTgPrice = prompt(`请输入${packageName}的新卖家薪资 (USDT):`, currentTgPrice);
+    if (newTgPrice === null) return;
+    
+    try {
+      const response = await fetch('/admin/api/prices', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          package: package,
+          web_price: parseFloat(newWebPrice),
+          tg_price: parseFloat(newTgPrice)
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        alert('价格更新成功！');
+        loadPrices(); // 重新加载价格数据
+      } else {
+        alert('价格更新失败: ' + (result.error || '未知错误'));
+      }
+    } catch (error) {
+      console.error('更新价格失败:', error);
+      alert('更新价格失败: ' + error.message);
+    }
   }
 
   async function editSeller(telegramId, currentNickname) {

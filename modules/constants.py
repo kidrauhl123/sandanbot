@@ -59,9 +59,21 @@ def sync_env_sellers_to_db():
 
 # ===== 价格系统 =====
 # 网页端价格（美元USDT）
-WEB_PRICES = {'12': 20}
+WEB_PRICES = {
+    '1': 5,     # 1个月
+    '2': 9,     # 2个月
+    '3': 13,    # 3个月
+    '6': 16,    # 6个月
+    '12': 20    # 12个月
+}
 # Telegram端卖家薪资（美元）
-TG_PRICES = {'12': 10}
+TG_PRICES = {
+    '1': 2.5,   # 1个月
+    '2': 4.5,   # 2个月
+    '3': 6.5,   # 3个月
+    '6': 8,     # 6个月
+    '12': 10    # 12个月
+}
 
 # 获取用户套餐价格
 def get_user_package_price(user_id, package):

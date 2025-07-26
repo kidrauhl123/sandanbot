@@ -71,12 +71,9 @@ def add_balance_record(user_id, amount, type_name, reason, reference_id=None, ba
 
 # ===== 数据库 =====
 def init_db():
-    """根据环境配置初始化数据库"""
+    """初始化PostgreSQL数据库"""
     logger.info(f"初始化数据库，使用连接: {DATABASE_URL[:10]}...")
-    if DATABASE_URL.startswith('postgres'):
-        init_postgres_db()
-    else:
-        init_sqlite_db()
+    init_postgres_db()
     
     # 创建充值记录表和余额记录表
     logger.info("正在创建充值记录表和余额记录表...")
@@ -88,159 +85,7 @@ def init_db():
     create_activation_code_table()
     logger.info("激活码表创建完成")
 
-def init_sqlite_db():
-    """初始化SQLite数据库"""
-    logger.info("使用SQLite数据库")
-    # 使用绝对路径访问数据库
-    current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    db_path = os.path.join(current_dir, "orders.db")
-    logger.info(f"初始化数据库: {db_path}")
-    
-    conn = sqlite3.connect(db_path)
-    c = conn.cursor()
-    
-    # 创建订单表
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS orders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        account TEXT,
-        password TEXT,
-        package TEXT,
-        remark TEXT,
-        status TEXT DEFAULT 'submitted',
-        created_at TEXT,
-        updated_at TEXT,
-        user_id INTEGER,
-        username TEXT,
-        accepted_by TEXT,
-        accepted_at TEXT,
-        completed_at TEXT,
-        notified INTEGER DEFAULT 0
-    )
-    ''')
-    
-    # 创建用户表
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE,
-        password_hash TEXT,
-        email TEXT,
-        is_admin INTEGER DEFAULT 0,
-        created_at TEXT,
-        balance REAL DEFAULT 0,
-        credit_limit REAL DEFAULT 0
-    )
-    ''')
-    
-    # 创建卖家表
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS sellers (
-        telegram_id TEXT PRIMARY KEY,
-        username TEXT,
-        first_name TEXT,
-        nickname TEXT,
-        is_active INTEGER DEFAULT 1,
-        added_at TEXT,
-        added_by TEXT,
-        is_admin INTEGER DEFAULT 0,
-        last_active_at TEXT,
-        desired_orders INTEGER DEFAULT 0,
-        activity_check_at TEXT
-    )
-    ''')
-    
-    # 检查sellers表是否需要添加新字段
-    try:
-        c.execute("SELECT last_active_at FROM sellers LIMIT 1")
-    except sqlite3.OperationalError:
-        c.execute("ALTER TABLE sellers ADD COLUMN last_active_at TEXT")
-        conn.commit()
-    
-    try:
-        c.execute("SELECT desired_orders FROM sellers LIMIT 1")
-    except sqlite3.OperationalError:
-        c.execute("ALTER TABLE sellers ADD COLUMN desired_orders INTEGER DEFAULT 0")
-        conn.commit()
-    
-    try:
-        c.execute("SELECT activity_check_at FROM sellers LIMIT 1")
-    except sqlite3.OperationalError:
-        c.execute("ALTER TABLE sellers ADD COLUMN activity_check_at TEXT")
-        conn.commit()
-    
-    # 检查sellers表是否需要添加nickname列
-    try:
-        c.execute("SELECT nickname FROM sellers LIMIT 1")
-    except sqlite3.OperationalError:
-        logger.info("为sellers表添加nickname列")
-        c.execute("ALTER TABLE sellers ADD COLUMN nickname TEXT")
-        conn.commit()
-    
-    # 检查sellers表是否需要添加is_admin列
-    try:
-        c.execute("SELECT is_admin FROM sellers LIMIT 1")
-    except sqlite3.OperationalError:
-        logger.info("为sellers表添加is_admin列")
-        c.execute("ALTER TABLE sellers ADD COLUMN is_admin INTEGER DEFAULT 0")
-        conn.commit()
-    
-    # 检查users表中是否需要添加新列
-    c.execute("PRAGMA table_info(users)")
-    users_columns = [column[1] for column in c.fetchall()]
-    
-    # 迁移password列到password_hash列
-    if 'password' in users_columns and 'password_hash' not in users_columns:
-        logger.info("迁移users表的password列到password_hash列")
-        c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
-        c.execute("UPDATE users SET password_hash = password")
-        # 注意：SQLite不支持DROP COLUMN，所以暂时保留password列
-        conn.commit()
-    
-    # 检查是否需要添加password_hash列（用于新安装）
-    if 'password_hash' not in users_columns and 'password' not in users_columns:
-        logger.info("为users表添加password_hash列")
-        c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
-    
-    # 检查是否需要添加is_admin列
-    if 'is_admin' not in users_columns:
-        logger.info("为users表添加is_admin列")
-        c.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
-    
-    # 检查是否需要添加balance列（用户余额）
-    if 'balance' not in users_columns:
-        logger.info("为users表添加balance列")
-        c.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0")
-    
-    # 检查是否需要添加credit_limit列（透支额度）
-    if 'credit_limit' not in users_columns:
-        logger.info("为users表添加credit_limit列")
-        c.execute("ALTER TABLE users ADD COLUMN credit_limit REAL DEFAULT 0")
-    
-    # 检查recharge_requests表中是否需要添加新列
-    try:
-        c.execute("PRAGMA table_info(recharge_requests)")
-        recharge_columns = [column[1] for column in c.fetchall()]
-        if 'details' not in recharge_columns:
-            logger.info("为recharge_requests表添加details列")
-            c.execute("ALTER TABLE recharge_requests ADD COLUMN details TEXT")
-    except sqlite3.OperationalError:
-        # Table might not exist yet, will be created by create_recharge_tables()
-        pass
-    
-    # 创建超级管理员账号（如果不存在）
-    admin_hash = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
-    c.execute("SELECT id FROM users WHERE username = ?", (ADMIN_USERNAME,))
-    if not c.fetchone():
-        logger.info(f"创建默认管理员账号: {ADMIN_USERNAME}")
-        c.execute("""
-            INSERT INTO users (username, password_hash, is_admin, created_at) 
-            VALUES (?, ?, 1, ?)
-        """, (ADMIN_USERNAME, admin_hash, get_china_time()))
-    
-    conn.commit()
-    conn.close()
-    logger.info("SQLite数据库初始化完成")
+
 
 def init_postgres_db():
     """初始化PostgreSQL数据库"""
@@ -405,61 +250,11 @@ def init_postgres_db():
 
 # 数据库执行函数
 def execute_query(query, params=(), fetch=False, return_cursor=False):
-    """执行数据库查询并返回结果"""
+    """执行PostgreSQL数据库查询并返回结果"""
     logger.debug(f"执行查询: {query[:50]}... 参数: {params}")
-    if DATABASE_URL.startswith('postgres'):
-        return execute_postgres_query(query, params, fetch, return_cursor)
-    else:
-        return execute_sqlite_query(query, params, fetch, return_cursor)
+    return execute_postgres_query(query, params, fetch, return_cursor)
 
-def execute_sqlite_query(query, params=(), fetch=False, return_cursor=False):
-    """执行SQLite查询并返回结果"""
-    try:
-        # 使用绝对路径访问数据库
-        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(current_dir, "orders.db")
-        logger.debug(f"执行查询，使用数据库: {db_path}")
-        
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # 检查是否为INSERT语句，确保notified字段被正确设置
-        if "INSERT INTO orders" in query and "notified" not in query:
-            logger.warning("检测到INSERT订单但未包含notified字段，自动添加notified=0")
-            # 修改查询添加notified字段
-            if ")" in query and "VALUES" in query:
-                parts = query.split(")")
-                values_part = parts[1].strip()
-                if values_part.startswith("VALUES"):
-                    # 在字段列表末尾添加notified
-                    parts[0] = parts[0] + ", notified"
-                    # 在值列表末尾添加0
-                    values_start = values_part.find("(")
-                    if values_start >= 0:
-                        values_part = values_part[:values_start+1] + "?, " + values_part[values_start+1:]
-                        parts[1] = values_part
-                        query = ")".join(parts)
-                        params = params + (0,)
-        
-        cursor.execute(query, params)
-        
-        if return_cursor:
-            conn.commit()
-            return cursor
 
-        result = None
-        if fetch:
-            result = cursor.fetchall()
-            logger.debug(f"查询返回 {len(result)} 条结果")
-        else:
-            logger.debug(f"查询影响 {cursor.rowcount} 行")
-        
-        conn.commit()
-        conn.close()
-        return result
-    except Exception as e:
-        logger.error(f"SQLite查询执行失败: {str(e)}", exc_info=True)
-        raise
 
 def execute_postgres_query(query, params=(), fetch=False, return_cursor=False):
     """执行PostgreSQL查询并返回结果"""
@@ -516,7 +311,7 @@ def get_unnotified_orders():
 
 # 获取订单详情
 def get_order_details(oid):
-    return execute_query("SELECT id, account, password, package, status, remark FROM orders WHERE id = ?", (oid,), fetch=True)
+    return execute_query("SELECT id, account, password, package, status, remark FROM orders WHERE id = %s", (oid,), fetch=True)
 
 # ===== 卖家管理 =====
 def get_all_sellers():
@@ -588,11 +383,11 @@ def add_seller(telegram_id, username, first_name, nickname, added_by):
 
 def toggle_seller_status(telegram_id):
     """切换卖家活跃状态"""
-    execute_query("UPDATE sellers SET is_active = NOT is_active WHERE telegram_id = ?", (telegram_id,))
+    execute_query("UPDATE sellers SET is_active = NOT is_active WHERE telegram_id = %s", (telegram_id,))
 
 def remove_seller(telegram_id):
     """移除卖家"""
-    return execute_query("DELETE FROM sellers WHERE telegram_id=?", (telegram_id,))
+    return execute_query("DELETE FROM sellers WHERE telegram_id=%s", (telegram_id,))
 
 def toggle_seller_admin(telegram_id):
     """切换卖家的管理员状态"""
@@ -653,7 +448,7 @@ def get_user_balance(user_id):
     if DATABASE_URL.startswith('postgres'):
         result = execute_query("SELECT balance FROM users WHERE id=%s", (user_id,), fetch=True)
     else:
-        result = execute_query("SELECT balance FROM users WHERE id=?", (user_id,), fetch=True)
+        result = execute_query("SELECT balance FROM users WHERE id=%s", (user_id,), fetch=True)
     
     if result:
         return result[0][0]
@@ -664,7 +459,7 @@ def get_user_credit_limit(user_id):
     if DATABASE_URL.startswith('postgres'):
         result = execute_query("SELECT credit_limit FROM users WHERE id=%s", (user_id,), fetch=True)
     else:
-        result = execute_query("SELECT credit_limit FROM users WHERE id=?", (user_id,), fetch=True)
+        result = execute_query("SELECT credit_limit FROM users WHERE id=%s", (user_id,), fetch=True)
     
     if result:
         return result[0][0]
@@ -679,7 +474,7 @@ def set_user_credit_limit(user_id, credit_limit):
     if DATABASE_URL.startswith('postgres'):
         execute_query("UPDATE users SET credit_limit=%s WHERE id=%s", (credit_limit, user_id))
     else:
-        execute_query("UPDATE users SET credit_limit=? WHERE id=?", (credit_limit, user_id))
+        execute_query("UPDATE users SET credit_limit=%s WHERE id=%s", (credit_limit, user_id))
     
     return True, credit_limit
 
@@ -1572,7 +1367,7 @@ def generate_activation_code(length=16):
         
         # 检查是否已存在
         existing = execute_query(
-            "SELECT id FROM activation_codes WHERE code = %s" if DATABASE_URL.startswith('postgres') else "SELECT id FROM activation_codes WHERE code = ?", 
+            "SELECT id FROM activation_codes WHERE code = %s", 
             (code,), fetch=True)
         if not existing:
             return code
