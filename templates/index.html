@@ -1008,13 +1008,18 @@
                   <div class="form-group">
                     <label>油管二维码图片</label>
                     <div class="upload-container" id="dropArea">
-                      <input name="qr_code" id="qr_code_input" type="file" class="form-control file-input" required accept="image/*" capture="environment">
+                      <input name="qr_code" id="qr_code_input" type="file" class="form-control file-input" required accept="image/*" capture="environment" style="display: none;">
                       <div class="upload-placeholder">
-                        <i class="fas fa-cloud-upload-alt"></i>
-                        <span>点击选择或拖拽图片到此处</span>
-                        <span class="small">也可以直接粘贴截图 (Ctrl+V)</span>
+                        <i class="fas fa-clipboard"></i>
+                        <span>点击此处粘贴剪切板图片 (Ctrl+V)</span>
+                        <span class="small">或拖拽图片到此处</span>
                       </div>
                       <div class="image-preview" id="imagePreview"></div>
+                    </div>
+                    <div style="margin-top: 10px;">
+                      <button type="button" id="manualUploadBtn" class="btn btn-secondary" style="background: #6c757d; color: white; padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px;">
+                        📁 手动选择文件
+                      </button>
                     </div>
                     <small class="form-text text-muted">请上传您YouTube账号的二维码截图</small>
                   </div>
@@ -1034,6 +1039,10 @@
                     .upload-container:hover, .upload-container.dragover {
                       background-color: #eef2ff;
                       border-color: #667eea;
+                    }
+                    .upload-container.paste-mode {
+                      border-color: #28a745;
+                      background-color: #f0fff4;
                     }
                     .upload-placeholder {
                       display: flex;
@@ -1308,6 +1317,7 @@
     const dropArea = document.getElementById('dropArea');
     const fileInput = document.getElementById('qr_code_input');
     const imagePreview = document.getElementById('imagePreview');
+    const manualUploadBtn = document.getElementById('manualUploadBtn');
     
     // 处理拖拽事件
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -1450,10 +1460,24 @@
       reader.readAsDataURL(file);
     }
     
-    // 点击上传区域也能触发文件选择
+    // 点击上传区域显示粘贴提示
     dropArea.addEventListener('click', function() {
-      fileInput.click();
+      // 显示粘贴提示
+      dropArea.classList.add('paste-mode');
+      showCustomAlert('请使用 Ctrl+V 粘贴剪切板中的图片', 'success');
+      
+      // 3秒后移除高亮
+      setTimeout(() => {
+        dropArea.classList.remove('paste-mode');
+      }, 3000);
     });
+    
+    // 手动上传按钮事件
+    if (manualUploadBtn) {
+      manualUploadBtn.addEventListener('click', function() {
+        fileInput.click();
+      });
+    }
   }
 
   // 页面加载处理
@@ -1677,13 +1701,27 @@
     }
   }
     
+  // 防重复提交标志
+  let isSubmitting = false;
+  
   // 提交订单
   document.getElementById('orderForm').addEventListener('submit', async e => {
     e.preventDefault();
+    
+    // 防重复提交检查
+    if (isSubmitting) {
+      showCustomAlert('订单正在提交中，请勿重复点击', 'warning');
+      return;
+    }
+    
     const btn = e.target.querySelector('button');
     const orig = btn.textContent;
+    
+    // 设置提交状态
+    isSubmitting = true;
     btn.textContent = '提交中…';
     btn.disabled = true;
+    
     try {
       const data = new FormData(e.target);
       
@@ -1695,6 +1733,17 @@
         e.target.reset();
         displayedOrders = 5;
         searchKeyword = '';
+        
+        // 清除图片预览
+        const imagePreview = document.getElementById('imagePreview');
+        const placeholder = document.querySelector('.upload-placeholder');
+        if (imagePreview) {
+          imagePreview.innerHTML = '';
+          imagePreview.style.display = 'none';
+        }
+        if (placeholder) {
+          placeholder.style.display = 'flex';
+        }
         
         // 更新余额显示
         if (result.balance !== undefined) {
@@ -1727,6 +1776,8 @@
       showCustomAlert('网络错误或服务器无响应，请重试', 'error');
       console.error('订单提交错误:', error);
     } finally {
+      // 重置提交状态
+      isSubmitting = false;
       btn.textContent = orig;
       btn.disabled = false;
     }
