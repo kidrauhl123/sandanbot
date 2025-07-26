@@ -116,6 +116,24 @@ def init_db():
     
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
         init_postgres_db()
+        # 确保创建用户定制价格表
+        try:
+            execute_query("""
+                CREATE TABLE IF NOT EXISTS user_custom_prices (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    package TEXT NOT NULL,
+                    price REAL NOT NULL,
+                    created_at TEXT NOT NULL,
+                    created_by INTEGER,
+                    UNIQUE(user_id, package),
+                    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                    FOREIGN KEY (created_by) REFERENCES users (id)
+                )
+            """)
+            logger.info("用户定制价格表已确保存在")
+        except Exception as e:
+            logger.error(f"创建用户定制价格表失败: {str(e)}")
     else:
         logger.info("使用SQLite数据库")
         init_sqlite_db()
@@ -129,6 +147,11 @@ def init_db():
     logger.info("正在创建激活码表...")
     create_activation_code_table()
     logger.info("激活码表创建完成")
+    
+    # 创建用户定制价格表
+    logger.info("正在创建用户定制价格表...")
+    create_user_custom_prices_table()
+    logger.info("用户定制价格表创建完成")
 
 
 
@@ -1431,6 +1454,67 @@ def create_activation_code_table():
         logger.error(f"创建激活码表失败: {str(e)}", exc_info=True)
         return False
 
+def create_user_custom_prices_table():
+    """创建用户定制价格表"""
+    try:
+        if DATABASE_URL.startswith('postgres'):
+            # PostgreSQL
+            table_exists = execute_query("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'user_custom_prices'
+                )
+            """, fetch=True)
+            
+            if not table_exists or not table_exists[0][0]:
+                execute_query("""
+                    CREATE TABLE user_custom_prices (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        package TEXT NOT NULL,
+                        price REAL NOT NULL,
+                        created_at TEXT NOT NULL,
+                        created_by INTEGER,
+                        UNIQUE(user_id, package),
+                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                        FOREIGN KEY (created_by) REFERENCES users (id)
+                    )
+                """)
+                logger.info("已创建用户定制价格表(PostgreSQL)")
+        else:
+            # SQLite
+            current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            db_path = os.path.join(current_dir, "orders.db")
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # 检查用户定制价格表是否存在
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_custom_prices'")
+            if not cursor.fetchone():
+                cursor.execute("""
+                    CREATE TABLE user_custom_prices (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        package TEXT NOT NULL,
+                        price REAL NOT NULL,
+                        created_at TEXT NOT NULL,
+                        created_by INTEGER,
+                        UNIQUE(user_id, package),
+                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                        FOREIGN KEY (created_by) REFERENCES users (id)
+                    )
+                """)
+                conn.commit()
+                logger.info("已创建用户定制价格表(SQLite)")
+            
+            conn.close()
+        
+        return True
+    except Exception as e:
+        logger.error(f"创建用户定制价格表失败: {str(e)}", exc_info=True)
+        return False
+
 def generate_activation_code(length=16):
     """生成唯一的激活码"""
     import random
@@ -1657,8 +1741,12 @@ def get_user_custom_prices(user_id):
             
         return custom_prices
     except Exception as e:
-        logger.error(f"获取用户定制价格失败: {str(e)}", exc_info=True)
-        return {}
+        if "does not exist" in str(e) or "no such table" in str(e):
+            logger.warning(f"用户定制价格表不存在，返回空字典: {str(e)}")
+            return {}
+        else:
+            logger.error(f"获取用户定制价格失败: {str(e)}", exc_info=True)
+            return {}
 
 def set_user_custom_price(user_id, package, price, admin_id):
     """

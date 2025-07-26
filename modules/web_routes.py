@@ -685,9 +685,10 @@ def register_routes(app, notification_queue):
     def admin_api_users():
         """获取所有用户列表（仅限管理员）"""
         try:
-            logger.info(f"管理员 {session.get('username')} 请求用户列表")
+            logger.info(f"管理员 {session.get('username')} (ID: {session.get('user_id')}, is_admin: {session.get('is_admin')}) 请求用户列表")
             
             # 获取所有用户基础信息
+            logger.info("执行用户查询SQL...")
             users = execute_query("""
                 SELECT id, username, is_admin, created_at, last_login, balance, credit_limit 
                 FROM users ORDER BY created_at DESC
