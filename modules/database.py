@@ -113,9 +113,9 @@ def init_sqlite_db():
 def init_db():
     """初始化数据库"""
     logger.info(f"初始化数据库，使用连接: {DATABASE_URL[:10] if DATABASE_URL else 'SQLite'}...")
-    
+
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
-    init_postgres_db()
+        init_postgres_db()
         # 确保创建用户定制价格表
         try:
             execute_query("""
@@ -137,17 +137,17 @@ def init_db():
     else:
         logger.info("使用SQLite数据库")
         init_sqlite_db()
-    
+
     # 创建充值记录表和余额记录表
     logger.info("正在创建充值记录表和余额记录表...")
     create_recharge_tables()
     logger.info("充值记录表和余额记录表创建完成")
-    
+
     # 创建激活码表
     logger.info("正在创建激活码表...")
     create_activation_code_table()
     logger.info("激活码表创建完成")
-    
+
     # 创建用户定制价格表
     logger.info("正在创建用户定制价格表...")
     create_user_custom_prices_table()
