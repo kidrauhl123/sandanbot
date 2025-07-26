@@ -1150,6 +1150,18 @@
 </div>
 
 <script>
+  // 时间格式化函数
+  function formatDateTime(dateString) {
+    if (!dateString) return '未知';
+    const date = new Date(dateString);
+    return date.getFullYear() + '-' + 
+           String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+           String(date.getDate()).padStart(2, '0') + ' ' + 
+           String(date.getHours()).padStart(2, '0') + ':' + 
+           String(date.getMinutes()).padStart(2, '0') + ':' + 
+           String(date.getSeconds()).padStart(2, '0');
+  }
+
   // 全局变量
   let displayedOrders = 10; // 初始显示10个订单
   let allOrders = []; // 存储所有订单
@@ -1460,16 +1472,47 @@
       reader.readAsDataURL(file);
     }
     
-    // 点击上传区域显示粘贴提示
-    dropArea.addEventListener('click', function() {
-      // 显示粘贴提示
-      dropArea.classList.add('paste-mode');
-      showCustomAlert('请使用 Ctrl+V 粘贴剪切板中的图片', 'success');
-      
-      // 3秒后移除高亮
-      setTimeout(() => {
-        dropArea.classList.remove('paste-mode');
-      }, 3000);
+    // 点击上传区域直接执行粘贴操作
+    dropArea.addEventListener('click', async function() {
+      try {
+        // 尝试从剪切板读取数据
+        const clipboardItems = await navigator.clipboard.read();
+        
+        for (const clipboardItem of clipboardItems) {
+          for (const type of clipboardItem.types) {
+            if (type.startsWith('image/')) {
+              const blob = await clipboardItem.getType(type);
+              
+              // 创建文件对象
+              const fileName = `pasted_image_${new Date().getTime()}.png`;
+              const file = new File([blob], fileName, {type: blob.type});
+              
+              // 创建 DataTransfer 对象并附加文件
+              const dataTransfer = new DataTransfer();
+              dataTransfer.items.add(file);
+              
+              // 设置文件输入框的文件
+              fileInput.files = dataTransfer.files;
+              
+              // 预览图片
+              previewFile(file);
+              
+              // 触发变更事件
+              fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+              
+              showCustomAlert('图片已从剪切板粘贴成功', 'success');
+              return;
+            }
+          }
+        }
+        
+        // 如果没有找到图片
+        showCustomAlert('剪切板中没有图片，请先复制图片', 'warning');
+        
+      } catch (error) {
+        // 如果浏览器不支持或权限被拒绝，显示提示
+        showCustomAlert('请使用 Ctrl+V 粘贴剪切板中的图片，或点击下方手动选择文件', 'warning');
+      }
     });
     
     // 手动上传按钮事件

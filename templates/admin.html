@@ -963,12 +963,24 @@
         return;
       }
       
+    // 时间格式化函数
+    function formatDateTime(dateString) {
+        if (!dateString) return '未知';
+        const date = new Date(dateString);
+        return date.getFullYear() + '-' + 
+               String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+               String(date.getDate()).padStart(2, '0') + ' ' + 
+               String(date.getHours()).padStart(2, '0') + ':' + 
+               String(date.getMinutes()).padStart(2, '0') + ':' + 
+               String(date.getSeconds()).padStart(2, '0');
+    }
+
     users.forEach(user => {
         const tr = document.createElement('tr');
         
         // 格式化日期
-        const createdAt = user.created_at ? new Date(user.created_at).toLocaleString() : '未知';
-        const lastLogin = user.last_login ? new Date(user.last_login).toLocaleString() : '未登录';
+        const createdAt = user.created_at ? formatDateTime(user.created_at) : '未知';
+        const lastLogin = user.last_login ? formatDateTime(user.last_login) : '未登录';
         
         tr.innerHTML = `
           <td>${user.id}</td>
