@@ -3,12 +3,12 @@ import os
 
 def check_and_fix_database():
     """检查并修复数据库表结构"""
-    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "orders.db")
-    
+db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "orders.db")
+
     try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
+conn = sqlite3.connect(db_path)
+cursor = conn.cursor()
+
         print("检查数据库表结构...")
         
         # 检查users表结构
@@ -22,7 +22,7 @@ def check_and_fix_database():
             cursor.execute("ALTER TABLE users ADD COLUMN last_login TEXT")
             conn.commit()
             print("last_login字段添加成功")
-        
+
         # 检查是否缺少balance字段
         if 'balance' not in columns:
             print("添加缺失的balance字段...")
@@ -53,8 +53,8 @@ def check_and_fix_database():
             print("前5个用户:")
             for user in users:
                 print(f"  用户: {user}")
-        
-        conn.close()
+
+conn.close() 
         print("数据库检查完成")
         
     except Exception as e:

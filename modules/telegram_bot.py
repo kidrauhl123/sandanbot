@@ -1492,15 +1492,23 @@ async def handle_availability_accept(query, telegram_id, username):
         except Exception as storage_error:
             logger.error(f"存储卖家响应失败: {str(storage_error)}")
         
-        # 更新消息内容
-        await query.edit_message_text(
-            "✅ *Confirmed Online* ✅\n\n"
-            f"Thank you! User *{username}* will be notified.",
-            parse_mode='Markdown'
-        )
-        
+        # 删除原消息
+        try:
+            await query.delete_message()
+        except Exception as e:
+            logger.warning(f"删除消息失败: {str(e)}")
+        # 发送新提示
+        if bot_application and bot_application.bot:
+            await bot_application.bot.send_message(
+                chat_id=telegram_id,
+                text="You are now marked as online. Please wait for new orders.",
+                parse_mode='Markdown'
+            )
+            logger.info(f"已向卖家 {telegram_id} 发送上线提示")
+        else:
+            logger.error("机器人未初始化，无法发送上线提示")
+        # 一定要调用answer避免TG端卡住
         await query.answer("Confirmed!", show_alert=False)
-        logger.info(f"卖家 {telegram_id} 成功确认了对用户 {username} 的可用性")
         
     except Exception as e:
         logger.error(f"处理可用性确认失败: {str(e)}", exc_info=True)
