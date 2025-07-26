@@ -1030,6 +1030,11 @@ async def on_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"接单时出错: {str(e)}", exc_info=True)
             await query.answer("接单失败，请稍后重试", show_alert=True)
+    elif data.startswith("availability_accept_"):
+        # 处理可用性检查的ACCEPT响应
+        username = data.replace('availability_accept_', '')
+        await handle_availability_accept(query, user_id, username)
+        
     elif data.startswith("feedback:"):
         # 内联实现反馈按钮逻辑，替代 on_feedback_button 函数
         try:
@@ -1433,3 +1438,76 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "/test - 测试机器人状态"
             )
             context.user_data['welcomed'] = True
+
+# A模式相关功能
+async def send_availability_check(telegram_id, username):
+    """发送可用性检查通知给指定卖家"""
+    try:
+        # 创建ACCEPT按钮
+        keyboard = [
+            [InlineKeyboardButton("✅ ACCEPT", callback_data=f"availability_accept_{username}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        message = (
+            f"🔔 *Availability Check* 🔔\n\n"
+            f"User *{username}* wants to submit orders and is checking if you are online.\n\n"
+            f"Please click ACCEPT if you are available to process orders right now."
+        )
+        
+        if bot_application and bot_application.bot:
+            await bot_application.bot.send_message(
+                chat_id=telegram_id,
+                text=message,
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
+            logger.info(f"已向卖家 {telegram_id} 发送可用性检查通知")
+        else:
+            logger.error("机器人未初始化，无法发送可用性检查通知")
+            
+    except Exception as e:
+        logger.error(f"发送可用性检查通知失败: {str(e)}", exc_info=True)
+
+async def handle_availability_accept(query, telegram_id, username):
+    """处理卖家的可用性确认响应"""
+    try:
+        # 发送确认响应到web端
+        import requests
+        import asyncio
+        
+        # 这里需要调用web端的API来记录卖家响应
+        # 由于我们在异步环境中，需要使用aiohttp或者在新线程中使用requests
+        def send_response():
+            try:
+                import requests
+                response = requests.post(
+                    'http://localhost:5000/api/seller-availability-response',
+                    json={
+                        'telegram_id': str(telegram_id),
+                        'username': username
+                    },
+                    timeout=5
+                )
+                logger.info(f"卖家响应已发送到web端: {response.status_code}")
+            except Exception as e:
+                logger.error(f"发送卖家响应到web端失败: {str(e)}")
+        
+        # 在新线程中执行HTTP请求
+        import threading
+        threading.Thread(target=send_response, daemon=True).start()
+        
+        # 更新消息内容
+        await query.edit_message_text(
+            "✅ *Availability Confirmed* ✅\n\n"
+            f"Thank you for confirming your availability!\n"
+            f"User *{username}* has been notified that you are online.",
+            parse_mode='Markdown'
+        )
+        
+        await query.answer("Availability confirmed!", show_alert=False)
+        logger.info(f"卖家 {telegram_id} 确认了对用户 {username} 的可用性")
+        
+    except Exception as e:
+        logger.error(f"处理可用性确认失败: {str(e)}", exc_info=True)
+        await query.answer("确认失败，请重试", show_alert=True)

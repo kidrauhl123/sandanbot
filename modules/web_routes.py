@@ -153,7 +153,19 @@ def register_routes(app, notification_queue):
     @app.route('/', methods=['POST'])
     @login_required
     def create_order():
-        logger.info("处理图片上传请求")
+        # 检查下单模式
+        mode = request.form.get('mode', 'B')
+        
+        if mode == 'A':
+            # A模式：批量下单
+            return handle_mode_a_orders()
+        else:
+            # B模式：原有逻辑
+            return handle_mode_b_order()
+    
+    def handle_mode_b_order():
+        """处理B模式订单（原有逻辑）"""
+        logger.info("处理B模式图片上传请求")
         
         # 优先检查正常文件上传
         if 'qr_code' in request.files and request.files['qr_code'].filename != '':
@@ -376,6 +388,136 @@ def register_routes(app, notification_queue):
         except Exception as e:
             logger.error(f"创建订单时出错: {str(e)}", exc_info=True)
             return jsonify({"success": False, "error": f"创建订单时出错: {str(e)}"}), 500
+
+    def handle_mode_a_orders():
+        """处理A模式批量订单"""
+        logger.info("处理A模式批量订单请求")
+        
+        try:
+            # 获取订单数量
+            order_count = int(request.form.get('order_count', 1))
+            if order_count < 1 or order_count > 10:
+                return jsonify({"success": False, "error": "订单数量必须在1-10之间"}), 400
+            
+            # 处理图片上传（与B模式相同）
+            qr_code = None
+            if 'qr_code' in request.files and request.files['qr_code'].filename != '':
+                qr_code = request.files['qr_code']
+            elif 'qr_code_a' in request.files and request.files['qr_code_a'].filename != '':
+                qr_code = request.files['qr_code_a']
+            else:
+                return jsonify({"success": False, "error": "请上传二维码图片"}), 400
+            
+            # 保存图片（使用与B模式相同的逻辑）
+            import uuid, os
+            from datetime import datetime
+            import imghdr
+            
+            # 检查是否是有效的图片文件
+            temp_path = os.path.join('static', 'temp_upload_a.png')
+            qr_code.save(temp_path)
+            
+            img_type = imghdr.what(temp_path)
+            if not img_type:
+                os.remove(temp_path)
+                return jsonify({"success": False, "error": "请上传有效的图片文件"}), 400
+            
+            # 生成唯一文件名
+            file_ext = f".{img_type}" if img_type else ".png"
+            unique_filename = f"{uuid.uuid4().hex}{file_ext}"
+            timestamp = datetime.now().strftime("%Y%m%d")
+            save_path = os.path.join('static', 'uploads', timestamp)
+            
+            if not os.path.exists(save_path):
+                os.makedirs(save_path, exist_ok=True)
+                os.chmod(save_path, 0o755)
+            
+            file_path = os.path.join(save_path, unique_filename)
+            
+            import shutil
+            shutil.copy2(temp_path, file_path)
+            os.chmod(file_path, 0o644)
+            os.remove(temp_path)  # 清理临时文件
+            
+            if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+                return jsonify({"success": False, "error": "图片保存失败"}), 500
+            
+            logger.info(f"A模式图片保存成功: {file_path}")
+            
+            # 获取其他参数
+            package = '12'  # A模式固定为12个月
+            remark = request.form.get('remark_a', '')
+            user_id = session.get('user_id')
+            username = session.get('username')
+            
+            # 批量创建订单
+            created_orders = []
+            total_cost = 0
+            
+            for i in range(order_count):
+                try:
+                    # 每个订单使用相同的图片但不同的备注
+                    order_remark = f"[A模式批量下单 {i+1}/{order_count}] {remark}" if remark else f"[A模式批量下单 {i+1}/{order_count}]"
+                    
+                    # 使用原子操作创建订单
+                    success, message, new_balance, credit_limit = create_order_with_deduction_atomic(
+                        file_path, "", package, order_remark, username, user_id
+                    )
+                    
+                    if not success:
+                        # 如果创建失败，返回错误信息
+                        logger.warning(f"A模式第{i+1}个订单创建失败: {message}")
+                        return jsonify({
+                            "success": False,
+                            "error": f"第{i+1}个订单创建失败: {message}",
+                            "balance": new_balance,
+                            "credit_limit": credit_limit
+                        }), 400
+                    
+                    # 获取新创建的订单ID
+                    new_order = execute_query(
+                        "SELECT id FROM orders WHERE web_user_id = ? ORDER BY id DESC LIMIT 1", 
+                        (username,), fetch=True
+                    )
+                    if new_order:
+                        order_id = new_order[0][0]
+                        created_orders.append(order_id)
+                        
+                        # 标记为已通知并加入队列
+                        from modules.database import mark_order_notified
+                        mark_order_notified(order_id)
+                        
+                        notification_queue.put({
+                            'type': 'new_order',
+                            'order_id': order_id,
+                            'account': file_path,
+                            'password': '',
+                            'package': package,
+                            'preferred_seller': '',  # A模式不指定卖家
+                            'remark': order_remark
+                        })
+                        
+                        logger.info(f"A模式订单 #{order_id} 创建成功并加入通知队列")
+                
+                except Exception as e:
+                    logger.error(f"创建第{i+1}个订单时出错: {str(e)}")
+                    return jsonify({
+                        "success": False,
+                        "error": f"创建第{i+1}个订单时出错: {str(e)}"
+                    }), 500
+            
+            logger.info(f"A模式批量订单创建完成: 用户={username}, 创建了{len(created_orders)}个订单")
+            
+            return jsonify({
+                "success": True,
+                "message": f"成功创建{len(created_orders)}个订单！",
+                "created_orders": created_orders,
+                "order_count": len(created_orders)
+            })
+            
+        except Exception as e:
+            logger.error(f"A模式批量下单出错: {str(e)}", exc_info=True)
+            return jsonify({"success": False, "error": f"批量下单出错: {str(e)}"}), 500
 
     @app.route('/orders/stats/web/<user_id>')
     @login_required
@@ -1216,6 +1358,120 @@ def register_routes(app, notification_queue):
         except Exception as e:
             logger.error(f"切换卖家分流状态失败: {str(e)}", exc_info=True)
             return jsonify({"error": "操作失败，请重试"}), 500
+
+    # A模式相关API
+    @app.route('/api/check-active-sellers', methods=['POST'])
+    @login_required
+    def check_active_sellers():
+        """检查活跃卖家并发送TG通知"""
+        try:
+            data = request.get_json()
+            username = data.get('username')
+            
+            if not username:
+                return jsonify({"error": "缺少用户名"}), 400
+            
+            # 获取活跃的卖家
+            if DATABASE_URL.startswith('postgres'):
+                active_sellers = execute_query(
+                    "SELECT telegram_id, nickname FROM sellers WHERE is_active = TRUE", 
+                    fetch=True
+                )
+            else:
+                active_sellers = execute_query(
+                    "SELECT telegram_id, nickname FROM sellers WHERE is_active = 1", 
+                    fetch=True
+                )
+            
+            if not active_sellers:
+                return jsonify({"error": "当前没有活跃的卖家"}), 400
+            
+            # 清空之前的响应记录
+            if not hasattr(app, 'seller_responses'):
+                app.seller_responses = {}
+            app.seller_responses[username] = {}
+            
+            # 发送TG通知给所有活跃卖家
+            from modules.telegram_bot import send_availability_check
+            for seller in active_sellers:
+                telegram_id, nickname = seller
+                asyncio.create_task(send_availability_check(telegram_id, username))
+            
+            logger.info(f"用户 {username} 发起卖家在线检查，通知了 {len(active_sellers)} 个卖家")
+            
+            return jsonify({
+                "success": True,
+                "message": f"已向 {len(active_sellers)} 个活跃卖家发送通知"
+            })
+            
+        except Exception as e:
+            logger.error(f"检查活跃卖家失败: {str(e)}", exc_info=True)
+            return jsonify({"error": "检查失败，请重试"}), 500
+
+    @app.route('/api/get-seller-responses', methods=['GET'])
+    @login_required
+    def get_seller_responses():
+        """获取卖家响应状态"""
+        try:
+            username = request.args.get('username') or session.get('username')
+            
+            if not username:
+                return jsonify({"error": "缺少用户名"}), 400
+            
+            # 从全局存储中获取响应
+            responses = getattr(app, 'seller_responses', {}).get(username, {})
+            
+            # 获取响应的卖家信息
+            active_sellers = []
+            for telegram_id in responses.keys():
+                seller_info = execute_query(
+                    "SELECT nickname FROM sellers WHERE telegram_id = %s", 
+                    (telegram_id,), fetch=True
+                )
+                if seller_info:
+                    active_sellers.append({
+                        "telegram_id": telegram_id,
+                        "nickname": seller_info[0][0] or "未设置昵称"
+                    })
+            
+            return jsonify({
+                "success": True,
+                "activeSellers": active_sellers
+            })
+            
+        except Exception as e:
+            logger.error(f"获取卖家响应失败: {str(e)}", exc_info=True)
+            return jsonify({"error": "获取响应失败"}), 500
+
+    @app.route('/api/seller-availability-response', methods=['POST'])
+    def seller_availability_response():
+        """处理卖家的可用性响应"""
+        try:
+            data = request.get_json()
+            telegram_id = data.get('telegram_id')
+            username = data.get('username')
+            
+            if not telegram_id or not username:
+                return jsonify({"error": "缺少参数"}), 400
+            
+            # 这里应该通过某种方式找到对应的用户session
+            # 由于HTTP的无状态性，我们需要一个全局的存储方式
+            # 暂时使用内存存储，生产环境应该使用Redis等
+            if not hasattr(app, 'seller_responses'):
+                app.seller_responses = {}
+            
+            if username not in app.seller_responses:
+                app.seller_responses[username] = {}
+            
+            app.seller_responses[username][telegram_id] = True
+            
+            logger.info(f"卖家 {telegram_id} 响应了用户 {username} 的可用性检查")
+            
+            return jsonify({"success": True})
+            
+        except Exception as e:
+            logger.error(f"处理卖家响应失败: {str(e)}", exc_info=True)
+            return jsonify({"error": "处理失败"}), 500
 
     @app.route('/admin/api/sellers/toggle_admin', methods=['POST'])
     @login_required

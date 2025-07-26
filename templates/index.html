@@ -769,6 +769,114 @@
       position: relative;
     }
     
+    /* 模式选择样式 */
+    .mode-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    
+    .mode-option {
+      display: flex;
+      align-items: flex-start;
+      padding: 15px;
+      border: 2px solid #e0e6ed;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: #f8fafc;
+    }
+    
+    .mode-option:hover {
+      border-color: #667eea;
+      background: #f0f4ff;
+    }
+    
+    .mode-option input[type="radio"] {
+      margin-right: 12px;
+      margin-top: 2px;
+    }
+    
+    .mode-option input[type="radio"]:checked + .mode-label {
+      color: #667eea;
+      font-weight: 600;
+    }
+    
+    .mode-option input[type="radio"]:checked {
+      accent-color: #667eea;
+    }
+    
+    .mode-option:has(input:checked) {
+      border-color: #667eea;
+      background: #f0f4ff;
+    }
+    
+    .mode-label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    
+    .mode-option small {
+      color: #6b7280;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    
+    /* A模式步骤样式 */
+    .step-container {
+      border: 1px solid #e0e6ed;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      background: #fff;
+    }
+    
+    .active-sellers {
+      margin-top: 15px;
+      padding: 15px;
+      background: #f0fff4;
+      border: 1px solid #34d399;
+      border-radius: 8px;
+    }
+    
+    .sellers-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .seller-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      background: #fff;
+      border-radius: 6px;
+      border: 1px solid #d1fae5;
+    }
+    
+    .seller-item .seller-name {
+      font-weight: 500;
+      color: #059669;
+    }
+    
+    .seller-item .seller-status {
+      margin-left: auto;
+      font-size: 12px;
+      color: #059669;
+    }
+    
+    /* 按钮状态样式 */
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .btn-secondary:disabled {
+      background-color: #6c757d;
+    }
+    
     .detail-btn {
       background: rgba(102,126,234,0.1);
       color: #667eea;
@@ -1013,6 +1121,76 @@
                 <div class="card-header">
                   <h2>充值下单</h2>
                 </div>
+                <!-- 模式选择 -->
+                <div class="form-group">
+                  <label>选择下单模式</label>
+                  <div class="mode-selector">
+                    <label class="mode-option">
+                      <input type="radio" name="orderMode" value="A" id="modeA">
+                      <span class="mode-label">A模式 - 分步下单</span>
+                      <small>先检查卖家在线状态，再批量下单</small>
+                    </label>
+                    <label class="mode-option">
+                      <input type="radio" name="orderMode" value="B" id="modeB" checked>
+                      <span class="mode-label">B模式 - 快速下单</span>
+                      <small>直接提交订单，系统自动分配</small>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- A模式步骤容器 -->
+                <div id="modeAContainer" style="display: none;">
+                  <!-- 步骤1：订单数量 -->
+                  <div id="stepOrderCount" class="step-container">
+                    <div class="form-group">
+                      <label>我想发送订单数量</label>
+                      <input type="number" id="orderCount" class="form-control" value="1" min="1" max="10">
+                      <small class="form-text text-muted">一次最多可发送10个订单</small>
+                    </div>
+                    <div class="form-group">
+                      <button type="button" id="checkSellersBtn" class="btn btn-primary">检查在线卖家</button>
+                    </div>
+                    <div id="activeSellers" class="active-sellers" style="display:none;">
+                      <div class="sellers-list"></div>
+                    </div>
+                    <div class="form-group">
+                      <button type="button" id="nextStepBtn" class="btn btn-secondary" disabled>下一步</button>
+                    </div>
+                  </div>
+
+                  <!-- 步骤2：图片上传 -->
+                  <div id="stepImageUpload" class="step-container" style="display: none;">
+                    <div class="form-group">
+                      <label>油管二维码图片</label>
+                      <div class="upload-container" id="dropAreaA">
+                        <input name="qr_code_a" id="qr_code_input_a" type="file" class="form-control file-input" accept="image/*" capture="environment" style="display: none;">
+                        <div class="upload-placeholder">
+                          <i class="fas fa-clipboard"></i>
+                          <span>点击此处粘贴剪切板图片 (Ctrl+V)</span>
+                          <span class="small">或拖拽图片到此处</span>
+                        </div>
+                        <div class="image-preview" id="imagePreviewA"></div>
+                      </div>
+                      <div style="margin-top: 10px;">
+                        <button type="button" id="manualUploadBtnA" class="btn btn-secondary" style="background: #6c757d; color: white; padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px;">
+                          📁 手动选择文件
+                        </button>
+                      </div>
+                      <small class="form-text text-muted">请上传您YouTube账号的二维码截图</small>
+                    </div>
+                    <div class="form-group">
+                      <label>备注 (可选)</label>
+                      <input name="remark_a" id="remarkA" class="form-control" placeholder="如有特殊要求请备注">
+                    </div>
+                    <div class="form-group">
+                      <button type="button" id="submitOrdersBtn" class="btn btn-success">提交订单</button>
+                      <button type="button" id="backStepBtn" class="btn btn-secondary" style="margin-left: 10px;">返回上一步</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- B模式容器 -->
+                <div id="modeBContainer">
                 <form id="orderForm" autocomplete="off" enctype="multipart/form-data">
                   <div class="form-group">
                     <label>油管二维码图片</label>
@@ -1122,6 +1300,7 @@
                   </div>
                   <button type="submit" class="submit-btn">提交订单</button>
                 </form>
+                </div>
             </div>
         </div>
 
@@ -1191,11 +1370,15 @@
   
   // 默认价格，会被用户定制价格覆盖
   const WEB_PRICES = {
-    '12': 20
+    '12': 140
   };
   
   // 用户实际价格（会被API获取的价格覆盖）
   let USER_PRICES = {...WEB_PRICES};
+  
+  // A模式相关变量
+  let activeSellersData = [];
+  let selectedSellers = new Set();
   
   // 编辑备注功能
   function editRemark(orderId, currentRemark) {
@@ -1233,6 +1416,314 @@
       console.error('更新备注失败:', error);
       showAlert('网络错误，请重试', 'error');
     }
+  }
+
+  // 模式切换功能
+  function initModeSelector() {
+    const modeARadio = document.getElementById('modeA');
+    const modeBRadio = document.getElementById('modeB');
+    const modeAContainer = document.getElementById('modeAContainer');
+    const modeBContainer = document.getElementById('modeBContainer');
+    
+    function switchMode() {
+      if (modeARadio.checked) {
+        modeAContainer.style.display = 'block';
+        modeBContainer.style.display = 'none';
+      } else {
+        modeAContainer.style.display = 'none';
+        modeBContainer.style.display = 'block';
+      }
+    }
+    
+    modeARadio.addEventListener('change', switchMode);
+    modeBRadio.addEventListener('change', switchMode);
+    
+    // 初始化A模式功能
+    initModeA();
+    
+    // 初始状态
+    switchMode();
+  }
+  
+  // A模式功能初始化
+  function initModeA() {
+    // 检查在线卖家按钮
+    document.getElementById('checkSellersBtn').addEventListener('click', async function() {
+      const button = this;
+      const originalText = button.textContent;
+      
+      button.disabled = true;
+      button.textContent = '检查中...';
+      
+      try {
+        await checkActiveSellers();
+      } catch (error) {
+        console.error('检查卖家失败:', error);
+        showAlert('检查卖家失败，请重试', 'error');
+      } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    });
+    
+    // 下一步按钮
+    document.getElementById('nextStepBtn').addEventListener('click', function() {
+      showStep2();
+    });
+    
+    // 返回上一步按钮
+    document.getElementById('backStepBtn').addEventListener('click', function() {
+      showStep1();
+    });
+    
+    // 提交订单按钮
+    document.getElementById('submitOrdersBtn').addEventListener('click', function() {
+      submitModeAOrders();
+    });
+    
+    // 初始化A模式的图片上传
+    initImageUploadA();
+  }
+  
+  // 检查活跃卖家
+  async function checkActiveSellers() {
+    try {
+      const username = '{{ session.username }}';
+      const response = await fetch('/api/check-active-sellers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username: username })
+      });
+      
+      if (!response.ok) {
+        throw new Error('请求失败');
+      }
+      
+      const result = await response.json();
+      if (result.success) {
+        // 显示活跃卖家区域
+        document.getElementById('activeSellers').style.display = 'block';
+        
+        // 启动轮询检查卖家响应
+        pollSellerResponses();
+      } else {
+        throw new Error(result.error || '检查失败');
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  // 轮询检查卖家响应
+  function pollSellerResponses() {
+    const username = '{{ session.username }}';
+    let pollCount = 0;
+    const maxPolls = 15; // 30秒，每2秒一次
+    
+    const pollInterval = setInterval(async () => {
+      pollCount++;
+      
+      try {
+        const response = await fetch(`/api/get-seller-responses?username=${username}`);
+        if (response.ok) {
+          const data = await response.json();
+          updateSellersList(data.activeSellers);
+          
+          // 如果有卖家响应，启用下一步按钮
+          if (data.activeSellers.length > 0) {
+            const nextBtn = document.getElementById('nextStepBtn');
+            nextBtn.disabled = false;
+            nextBtn.className = 'btn btn-primary';
+            clearInterval(pollInterval);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('轮询卖家响应失败:', error);
+      }
+      
+      // 30秒后停止轮询
+      if (pollCount >= maxPolls) {
+        clearInterval(pollInterval);
+        // 显示超时提示
+        updateSellersList([]);
+        const sellersList = document.querySelector('.sellers-list');
+        sellersList.innerHTML = '<div style="text-align: center; color: #ef4444;">检查超时，暂无卖家响应。请稍后重试。</div>';
+      }
+    }, 2000); // 每2秒检查一次
+  }
+  
+  // 更新卖家列表显示
+  function updateSellersList(sellers) {
+    const sellersList = document.querySelector('.sellers-list');
+    sellersList.innerHTML = '';
+    
+    activeSellersData = sellers;
+    
+    if (sellers.length === 0) {
+      sellersList.innerHTML = '<div style="text-align: center; color: #6b7280;">等待卖家响应...</div>';
+      return;
+    }
+    
+    sellers.forEach(seller => {
+      const sellerItem = document.createElement('div');
+      sellerItem.className = 'seller-item';
+      sellerItem.innerHTML = `
+        <span class="seller-name">${seller.nickname || '未设置昵称'}</span>
+        <span class="seller-status">当前活跃，将处理您的订单</span>
+      `;
+      sellersList.appendChild(sellerItem);
+    });
+  }
+  
+  // 显示步骤2
+  function showStep2() {
+    document.getElementById('stepOrderCount').style.display = 'none';
+    document.getElementById('stepImageUpload').style.display = 'block';
+  }
+  
+  // 显示步骤1
+  function showStep1() {
+    document.getElementById('stepOrderCount').style.display = 'block';
+    document.getElementById('stepImageUpload').style.display = 'none';
+  }
+  
+  // 初始化A模式的图片上传
+  function initImageUploadA() {
+    const dropAreaA = document.getElementById('dropAreaA');
+    const fileInputA = document.getElementById('qr_code_input_a');
+    const manualUploadBtnA = document.getElementById('manualUploadBtnA');
+    const imagePreviewA = document.getElementById('imagePreviewA');
+    
+    // 复制原有的图片上传逻辑
+    dropAreaA.addEventListener('click', async function() {
+      try {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const clipboardItem of clipboardItems) {
+          for (const type of clipboardItem.types) {
+            if (type.startsWith('image/')) {
+              const blob = await clipboardItem.getType(type);
+              const file = new File([blob], 'clipboard-image.png', { type: blob.type });
+              
+              const dt = new DataTransfer();
+              dt.items.add(file);
+              fileInputA.files = dt.files;
+              
+              previewImageA(file);
+              return;
+            }
+          }
+        }
+        showAlert('剪切板中没有找到图片', 'warning');
+      } catch (error) {
+        console.error('读取剪切板失败:', error);
+        showAlert('无法访问剪切板，请使用手动上传', 'warning');
+      }
+    });
+    
+    manualUploadBtnA.addEventListener('click', function() {
+      fileInputA.click();
+    });
+    
+    fileInputA.addEventListener('change', function() {
+      if (this.files.length > 0) {
+        previewImageA(this.files[0]);
+      }
+    });
+  }
+  
+  // 预览图片A
+  function previewImageA(file) {
+    const previewA = document.getElementById('imagePreviewA');
+    previewA.innerHTML = '';
+    
+    if (file && file.type.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.onload = function() {
+        URL.revokeObjectURL(this.src);
+      };
+      img.src = URL.createObjectURL(file);
+      img.style.maxWidth = '100%';
+      img.style.maxHeight = '200px';
+      img.style.borderRadius = '8px';
+      previewA.appendChild(img);
+      previewA.style.display = 'block';
+    }
+  }
+  
+  // 提交A模式订单
+  async function submitModeAOrders() {
+    const orderCount = parseInt(document.getElementById('orderCount').value);
+    const fileInput = document.getElementById('qr_code_input_a');
+    const remark = document.getElementById('remarkA').value;
+    
+    if (!fileInput.files.length) {
+      showAlert('请上传二维码图片', 'error');
+      return;
+    }
+    
+    const button = document.getElementById('submitOrdersBtn');
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = '提交中...';
+    
+    try {
+      // 创建FormData
+      const formData = new FormData();
+      formData.append('mode', 'A');
+      formData.append('order_count', orderCount);
+      formData.append('qr_code', fileInput.files[0]);
+      formData.append('remark', remark);
+      formData.append('package', '12'); // 固定套餐
+      
+      const response = await fetch('/create_order', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          showAlert(`成功提交${orderCount}个订单！`, 'success');
+          
+          // 重置表单
+          resetModeA();
+          
+          // 刷新订单列表
+          loadOrders();
+        } else {
+          throw new Error(result.error || '提交失败');
+        }
+      } else {
+        throw new Error('网络请求失败');
+      }
+    } catch (error) {
+      console.error('提交订单失败:', error);
+      showAlert(error.message || '提交订单失败', 'error');
+    } finally {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+  
+  // 重置A模式
+  function resetModeA() {
+    document.getElementById('orderCount').value = '1';
+    document.getElementById('remarkA').value = '';
+    document.getElementById('qr_code_input_a').value = '';
+    document.getElementById('imagePreviewA').style.display = 'none';
+    document.getElementById('imagePreviewA').innerHTML = '';
+    document.getElementById('activeSellers').style.display = 'none';
+    document.getElementById('nextStepBtn').disabled = true;
+    document.getElementById('nextStepBtn').className = 'btn btn-secondary';
+    
+    // 回到步骤1
+    showStep1();
+    
+    activeSellersData = [];
+    selectedSellers.clear();
   }
 
   // 加载用户定制价格
@@ -1578,6 +2069,9 @@
 
   // 页面加载处理
   document.addEventListener('DOMContentLoaded', function() {
+    // 初始化模式选择器
+    initModeSelector();
+    
     // 初始化图片上传功能
     initImageUpload();
     
