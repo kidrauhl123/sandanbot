@@ -287,17 +287,93 @@ async def on_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"用户 {user_id} 执行了测试命令")
 
 async def on_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """开始命令处理"""
+    """开始命令处理 - 同时用于加入分流"""
     user_id = update.effective_user.id
     
     if is_seller(user_id):
+        # 检查当前分流状态
+        current_status = execute_query(
+            "SELECT is_active FROM sellers WHERE telegram_id = %s", 
+            (str(user_id),), fetch=True
+        )
+        
+        if current_status and len(current_status) > 0:
+            is_currently_active = current_status[0][0]
+            
+            # 如果当前是暂停状态，则激活分流
+            if not is_currently_active:
+                execute_query("UPDATE sellers SET is_active = TRUE WHERE telegram_id = %s", (str(user_id),))
+                await update.message.reply_text(
+                    "✅ *Successfully Joined Order Distribution!* ✅\n\n"
+                    "You are now receiving new orders.\n\n"
+                    "Commands available:\n"
+                    "• `/seller` - View available orders and your active orders\n"
+                    "• `/stop` - Pause order distribution\n\n"
+                    "Need assistance? Feel free to contact the administrator.",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(
+                    "🌟 *Welcome to the Premium Recharge System!* 🌟\n\n"
+                    "You are already active and receiving orders.\n\n"
+                    "Commands available:\n"
+                    "• `/seller` - View available orders and your active orders\n"
+                    "• `/stop` - Pause order distribution\n\n"
+                    "Need assistance? Feel free to contact the administrator.",
+                    parse_mode='Markdown'
+                )
+        else:
+            await update.message.reply_text(
+                "❌ *Seller Not Found* ❌\n\n"
+                "Please contact the administrator.",
+                parse_mode='Markdown'
+            )
+    else:
         await update.message.reply_text(
-            "🌟 *Welcome to the Premium Recharge System!* 🌟\n\n"
-            "As a verified seller, you have access to:\n"
-            "• `/seller` - View available orders and your active orders\n"
-            "Need assistance? Feel free to contact the administrator.",
+            "⚠️ *Access Restricted* ⚠️\n\n"
+            "This bot is exclusively available to authorized sellers.\n"
+            "For account inquiries, please contact the administrator.",
             parse_mode='Markdown'
         )
+
+async def on_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """停止命令处理 - 用于暂停分流"""
+    user_id = update.effective_user.id
+    
+    if is_seller(user_id):
+        # 检查当前分流状态
+        current_status = execute_query(
+            "SELECT is_active FROM sellers WHERE telegram_id = %s", 
+            (str(user_id),), fetch=True
+        )
+        
+        if current_status and len(current_status) > 0:
+            is_currently_active = current_status[0][0]
+            
+            # 如果当前是激活状态，则暂停分流
+            if is_currently_active:
+                execute_query("UPDATE sellers SET is_active = FALSE WHERE telegram_id = %s", (str(user_id),))
+                await update.message.reply_text(
+                    "⏸️ *Order Distribution Paused* ⏸️\n\n"
+                    "You will no longer receive new orders.\n"
+                    "Your existing accepted orders remain active.\n\n"
+                    "Use `/start` to resume receiving new orders.",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(
+                    "⏸️ *Already Paused* ⏸️\n\n"
+                    "You are already not receiving new orders.\n"
+                    "Your existing accepted orders remain active.\n\n"
+                    "Use `/start` to resume receiving new orders.",
+                    parse_mode='Markdown'
+                )
+        else:
+            await update.message.reply_text(
+                "❌ *Seller Not Found* ❌\n\n"
+                "Please contact the administrator.",
+                parse_mode='Markdown'
+            )
     else:
         await update.message.reply_text(
             "⚠️ *Access Restricted* ⚠️\n\n"
@@ -425,6 +501,7 @@ async def bot_main(queue):
         
         # 添加处理程序
         bot_application.add_handler(CommandHandler("start", on_start))
+    bot_application.add_handler(CommandHandler("stop", on_stop))
         bot_application.add_handler(CommandHandler("seller", on_seller_command))
         bot_application.add_handler(CommandHandler("orders", on_orders))  # 添加新命令
         

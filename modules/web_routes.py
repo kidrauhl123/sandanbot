@@ -47,6 +47,18 @@ def login_required(f):
     return decorated_function
 
 # ===== Web路由 =====
+def get_seller_display_name(accepted_by):
+    """获取卖家的显示昵称"""
+    if not accepted_by:
+        return ""
+    
+    seller_info = execute_query("SELECT nickname FROM sellers WHERE telegram_id = %s", (accepted_by,), fetch=True)
+    if seller_info and seller_info[0] and seller_info[0][0]:
+        return seller_info[0][0]
+    
+    # 如果没有设置昵称，返回空字符串而不是TG信息（保护隐私）
+    return ""
+
 def register_routes(app, notification_queue):
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -477,10 +489,8 @@ def register_routes(app, notification_queue):
         for order in orders:
             oid, account, password, package, status, created_at, accepted_at, completed_at, remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name = order
             
-            # 优先使用昵称，其次是用户名，最后是ID
-            seller_display = accepted_by_first_name or accepted_by_username or accepted_by
-            if seller_display and not isinstance(seller_display, str):
-                seller_display = str(seller_display)
+            # 获取sellers表中的显示昵称
+            seller_display = get_seller_display_name(accepted_by)
             
             # 如果是失败状态，翻译失败原因
             translated_remark = remark
@@ -1005,10 +1015,11 @@ def register_routes(app, notification_queue):
             # 格式化卖家信息
             seller_info = None
             if accepted_by:
+                seller_display_name = get_seller_display_name(accepted_by)
                 seller_info = {
                     "telegram_id": accepted_by,
                     "username": accepted_by_username or str(accepted_by),
-                    "name": accepted_by_first_name or str(accepted_by)
+                    "name": seller_display_name or "未设置昵称"
                 }
             
             formatted_orders.append({
@@ -1171,6 +1182,41 @@ def register_routes(app, notification_queue):
         toggle_seller_status(telegram_id)
         return jsonify({"success": True})
 
+    @app.route('/admin/api/sellers/<int:telegram_id>/distribution', methods=['POST'])
+    @login_required
+    @admin_required
+    def admin_api_toggle_seller_distribution(telegram_id):
+        """切换卖家的分流状态"""
+        try:
+            # 获取当前状态
+            current_status = execute_query(
+                "SELECT is_active FROM sellers WHERE telegram_id = %s", 
+                (str(telegram_id),), fetch=True
+            )
+            
+            if not current_status:
+                return jsonify({"error": "卖家不存在"}), 404
+            
+            # 切换状态
+            new_status = not current_status[0][0]
+            execute_query(
+                "UPDATE sellers SET is_active = %s WHERE telegram_id = %s", 
+                (new_status, str(telegram_id))
+            )
+            
+            status_text = "加入分流" if new_status else "暂停分流"
+            logger.info(f"管理员 {session.get('username')} 将卖家 {telegram_id} 设为 {status_text}")
+            
+            return jsonify({
+                "success": True, 
+                "message": f"已{status_text}",
+                "new_status": new_status
+            })
+            
+        except Exception as e:
+            logger.error(f"切换卖家分流状态失败: {str(e)}", exc_info=True)
+            return jsonify({"error": "操作失败，请重试"}), 500
+
     @app.route('/admin/api/sellers/toggle_admin', methods=['POST'])
     @login_required
     @admin_required
@@ -1235,7 +1281,7 @@ def register_routes(app, notification_queue):
                 "created_at": o[6],
                 "accepted_at": o[7],
                 "completed_at": o[8],
-                "accepted_by": o[12] or o[13] or "",  # 优先使用昵称，其次是用户名
+                "accepted_by": get_seller_display_name(o[9]),  # 使用admin设置的显示昵称
                 "creator": o[10] or o[14] or "N/A",   # web_user_id或creator_name
                 "user_id": o[11]
             })
@@ -1251,7 +1297,7 @@ def register_routes(app, notification_queue):
                 "created_at": o[6],
                 "accepted_at": o[7],
                 "completed_at": o[8],
-                "accepted_by": o[12] or o[13] or "",  # 优先使用昵称，其次是用户名
+                "accepted_by": get_seller_display_name(o[9]),  # 使用admin设置的显示昵称
                 "creator": o[10] or "N/A",           # web_user_id
                 "user_id": o[11]
             })

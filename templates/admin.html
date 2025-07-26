@@ -587,10 +587,8 @@
             <thead>
               <tr>
                 <th style="display:none;">Telegram ID</th>
-                <th>用户名</th>
-                <th>TG昵称</th>
                 <th>显示昵称</th>
-                <th>状态</th>
+                <th>分流状态</th>
                 <th>身份</th>
                 <th>添加时间</th>
                 <th>添加人</th>
@@ -599,7 +597,7 @@
             </thead>
             <tbody id="sellers-table-body">
               <tr>
-                <td colspan="8" class="loading">加载中...</td>
+                <td colspan="6" class="loading">加载中...</td>
               </tr>
             </tbody>
           </table>
@@ -1394,12 +1392,12 @@
         return;
       }
       
-      tbody.innerHTML = '<tr><td colspan="8" class="loading">加载中...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="loading">加载中...</td></tr>';
       
       const response = await fetch('/admin/api/sellers');
       if (!response.ok) {
         console.error("加载卖家数据失败:", response.status, response.statusText);
-        tbody.innerHTML = '<tr><td colspan="8" class="loading">加载失败，请刷新重试</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="loading">加载失败，请刷新重试</td></tr>';
         return;
       }
       
@@ -1409,16 +1407,16 @@
       tbody.innerHTML = '';
       
       if (sellers.length === 0) {
-        const colCount = tbody.parentElement.querySelector('thead tr').childElementCount || 8;
+        const colCount = tbody.parentElement.querySelector('thead tr').childElementCount || 6;
         tbody.innerHTML = `<tr><td colspan="${colCount}" style="text-align:center; padding: 40px;">暂无卖家</td></tr>`;
         return;
       }
       
       sellers.forEach(seller => {
         const statusBadge = seller.is_active 
-          ? '<span class="badge badge-success">活跃</span>' 
-          : '<span class="badge badge-secondary">停用</span>';
-        const toggleButtonText = seller.is_active ? '停用' : '启用';
+          ? '<span class="badge badge-success">接收订单</span>' 
+          : '<span class="badge badge-secondary">暂停分流</span>';
+        const toggleButtonText = seller.is_active ? '暂停分流' : '加入分流';
         const toggleButtonClass = seller.is_active ? 'btn-warning' : 'btn-success';
         
         const adminBadge = seller.is_admin
@@ -1430,15 +1428,13 @@
         const row = `
           <tr data-id="${seller.telegram_id}">
             <td style="display:none;">${seller.telegram_id}</td>
-            <td>${escapeHtml(seller.username || '')}</td>
-            <td>${escapeHtml(seller.first_name || '')}</td>
-            <td>${escapeHtml(seller.nickname || '')}</td>
+            <td>${escapeHtml(seller.nickname || '未设置昵称')}</td>
             <td>${statusBadge}</td>
             <td>${adminBadge}</td>
             <td>${seller.added_at}</td>
             <td>${escapeHtml(seller.added_by || '')}</td>
             <td class="actions">
-              <button class="btn btn-primary btn-sm" onclick="editSeller(${seller.telegram_id}, '${escapeHtml(seller.nickname || '')}')">编辑</button>
+              <button class="btn btn-primary btn-sm" onclick="editSeller(${seller.telegram_id}, '${escapeHtml(seller.nickname || '')}')">编辑昵称</button>
               <button class="btn ${toggleButtonClass} btn-sm" onclick="toggleSeller(${seller.telegram_id})">${toggleButtonText}</button>
               <button class="btn ${adminButtonClass} btn-sm" onclick="toggleSellerAdmin(${seller.telegram_id})">${adminButtonText}</button>
               <button class="btn btn-danger btn-sm" onclick="removeSeller(${seller.telegram_id})">删除</button>
@@ -1514,8 +1510,21 @@
   }
 
   async function toggleSeller(telegramId) {
-    await fetch(`/admin/api/sellers/${telegramId}/toggle`, { method: 'POST' });
-    loadSellers();
+    try {
+      const response = await fetch(`/admin/api/sellers/${telegramId}/distribution`, { method: 'POST' });
+      
+      if (response.ok) {
+        const result = await response.json();
+        alert(result.message || '分流状态已更新');
+        loadSellers();
+      } else {
+        const error = await response.json();
+        alert(error.error || '操作失败');
+      }
+    } catch (error) {
+      console.error('切换分流状态失败:', error);
+      alert('网络错误，请重试');
+    }
   }
 
   async function toggleSellerAdmin(telegramId) {
