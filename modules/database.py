@@ -124,7 +124,7 @@ def init_sqlite_db():
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE,
-        password TEXT,
+        password_hash TEXT,
         email TEXT,
         is_admin INTEGER DEFAULT 0,
         created_at TEXT,
@@ -188,6 +188,19 @@ def init_sqlite_db():
     # 检查users表中是否需要添加新列
     c.execute("PRAGMA table_info(users)")
     users_columns = [column[1] for column in c.fetchall()]
+    
+    # 迁移password列到password_hash列
+    if 'password' in users_columns and 'password_hash' not in users_columns:
+        logger.info("迁移users表的password列到password_hash列")
+        c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        c.execute("UPDATE users SET password_hash = password")
+        # 注意：SQLite不支持DROP COLUMN，所以暂时保留password列
+        conn.commit()
+    
+    # 检查是否需要添加password_hash列（用于新安装）
+    if 'password_hash' not in users_columns and 'password' not in users_columns:
+        logger.info("为users表添加password_hash列")
+        c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
     
     # 检查是否需要添加balance列（用户余额）
     if 'balance' not in users_columns:
@@ -268,7 +281,7 @@ def init_postgres_db():
     CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         username TEXT UNIQUE,
-        password TEXT,
+        password_hash TEXT,
         email TEXT,
         is_admin INTEGER DEFAULT 0,
         created_at TEXT,
@@ -331,6 +344,24 @@ def init_postgres_db():
         logger.info("为sellers表添加is_admin列")
         c.execute("ALTER TABLE sellers ADD COLUMN is_admin BOOLEAN DEFAULT FALSE")
         conn.commit()
+    
+    # 迁移users表的password列到password_hash列（PostgreSQL）
+    try:
+        c.execute("SELECT password_hash FROM users LIMIT 1")
+    except psycopg2.errors.UndefinedColumn:
+        try:
+            # 检查是否存在password列
+            c.execute("SELECT password FROM users LIMIT 1")
+            logger.info("迁移users表的password列到password_hash列")
+            c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+            c.execute("UPDATE users SET password_hash = password")
+            c.execute("ALTER TABLE users DROP COLUMN password")
+            conn.commit()
+        except psycopg2.errors.UndefinedColumn:
+            # 既没有password也没有password_hash列，添加password_hash列
+            logger.info("为users表添加password_hash列")
+            c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+            conn.commit()
     
     # 创建超级管理员账号（如果不存在）
     admin_hash = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
