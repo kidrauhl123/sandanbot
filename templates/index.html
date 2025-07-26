@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>破天充值系统</title>
+  <title>优图充值系统</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- 添加Font Awesome图标库 -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -949,7 +949,7 @@
 </head>
 <body>
 <div class="navbar">
-  <div class="navbar-brand">破天充值系统</div>
+  <div class="navbar-brand">优图充值系统</div>
   <div class="navbar-user">
     <div class="user-dropdown">
       <div class="user-info">
@@ -987,7 +987,7 @@
     
     {% if balance is defined %}
     <div id="balanceBadge" class="balance-badge {% if balance < 0 %}negative{% endif %}" style="cursor:pointer;">
-      余额: {{ balance }} USDT
+      余额: ¥{{ balance }}
       <a href="/recharge" class="recharge-btn">充值</a>
     </div>
     {% endif %}
@@ -1105,7 +1105,7 @@
                   </div>
                   <div class="form-group">
                     <label>价格</label>
-                    <div class="price-display">$<span id="selectedPrice">20</span><small style="margin-left:2px;font-size:12px;font-weight:normal;opacity:0.8;">USDT</small></div>
+                    <div class="price-display">¥<span id="selectedPrice">20</span></div>
                   </div>
                   <div class="form-group">
                     <label>备注 (可选)</label>
@@ -1146,7 +1146,7 @@
 </div>
 
 <div id="balanceInfoBar" style="display:none;padding:8px 15px;background:#fff8e1;border-bottom:1px solid #ffcc33;font-size:13px;text-align:center;">
-  当前余额：{{ balance }} USDT  {% if credit_limit is defined and credit_limit > 0 %}&nbsp;&nbsp;可透支额度：{{ credit_limit }} USDT{% endif %}
+  当前余额：¥{{ balance }}  {% if credit_limit is defined and credit_limit > 0 %}&nbsp;&nbsp;可透支额度：¥{{ credit_limit }}{% endif %}
 </div>
 
 <script>
@@ -1838,7 +1838,7 @@
     const balanceBadge = document.querySelector('.balance-badge');
     if (balanceBadge) {
       // 更新余额和透支额度的显示
-      balanceBadge.textContent = `余额: ${balance} USDT${creditLimit > 0 ? ` (额度: ${creditLimit} USDT)` : ''}`;
+              balanceBadge.textContent = `余额: ¥${balance}${creditLimit > 0 ? ` (额度: ¥${creditLimit})` : ''}`;
       
       // 根据余额正负设置不同的样式
       if (balance < 0) {

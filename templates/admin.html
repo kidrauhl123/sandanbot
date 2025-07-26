@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>系统管理后台 - 破天充值系统</title>
+  <title>系统管理后台 - 优图充值系统</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
@@ -619,7 +619,7 @@
                 <thead>
                   <tr>
                     <th>套餐</th>
-                    <th>当前价格 (USDT)</th>
+                    <th>当前价格 (¥)</th>
                     <th>卖家薪资 (USDT)</th>
                     <th>操作</th>
                   </tr>
@@ -2214,7 +2214,7 @@
   async function editPrice(package, currentWebPrice, currentTgPrice) {
     const packageName = getPackageName(package);
     
-    const newWebPrice = prompt(`请输入${packageName}的新网页端价格 (USDT):`, currentWebPrice);
+    const newWebPrice = prompt(`请输入${packageName}的新网页端价格 (¥):`, currentWebPrice);
     if (newWebPrice === null) return;
     
     const newTgPrice = prompt(`请输入${packageName}的新卖家薪资 (USDT):`, currentTgPrice);

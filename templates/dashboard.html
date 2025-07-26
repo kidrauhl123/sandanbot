@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>用户后台 - 破天充值系统</title>
+  <title>用户后台 - 优图充值系统</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
@@ -765,7 +765,7 @@
           <td data-label="YouTube">YouTube账号</td>
           <td data-label="二维码">${order.account.includes('uploads') ? `<a href="/${order.account}" target="_blank">查看二维码</a>` : '未上传二维码'}</td>
           <td data-label="套餐">一年个人会员</td>
-          <td data-label="价格">$${price} USDT</td>
+          <td data-label="价格">¥${price}</td>
           <td data-label="状态"><span class="status-badge ${statusClass}">${order.status_text}</span></td>
           <td data-label="提交时间">${order.created_at}</td>
           <td data-label="完成时间">${order.completed_at || '-'}</td>
