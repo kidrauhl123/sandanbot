@@ -1925,7 +1925,7 @@ def get_next_seller_b_mode():
         cur = conn.cursor()
         # 获取所有分流中卖家ID，按telegram_id升序
         if is_postgres():
-            cur.execute("SELECT telegram_id FROM sellers WHERE distribution=1 ORDER BY telegram_id ASC")
+            cur.execute("SELECT telegram_id FROM sellers WHERE distribution=TRUE ORDER BY telegram_id ASC")
         else:
             cur.execute("SELECT telegram_id FROM sellers WHERE distribution=1 ORDER BY telegram_id ASC")
         seller_ids = [str(row[0]) for row in cur.fetchall()]
