@@ -1499,7 +1499,9 @@
     });
     
     // 提交订单按钮
-    document.getElementById('submitOrdersBtn').addEventListener('click', function() {
+    document.getElementById('submitOrdersBtn').addEventListener('click', function(e) {
+      e.preventDefault();
+      console.log('分步下单提交按钮被点击');
       submitModeAOrders();
     });
     
