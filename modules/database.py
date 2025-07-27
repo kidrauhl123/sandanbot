@@ -1912,31 +1912,35 @@ def create_seller_round_robin_table():
             try:
                 cur.execute("SELECT is_nullable FROM information_schema.columns WHERE table_name='seller_round_robin' AND column_name='user_id'")
                 nullable = cur.fetchone()
-                if nullable and nullable[0] == 'NO':
-                    logger.info("检测到seller_round_robin.user_id为NOT NULL，执行强制重建表结构迁移...")
+                # 检查主键约束导致的NOT NULL
+                cur.execute("SELECT constraint_type FROM information_schema.table_constraints WHERE table_name='seller_round_robin' AND constraint_type='PRIMARY KEY'")
+                pk = cur.fetchone()
+                if (nullable and nullable[0] == 'NO') or pk:
+                    logger.info("检测到seller_round_robin.user_id为NOT NULL或主键，执行彻底重建表结构迁移...")
                     # 1. 备份原数据
                     cur.execute("SELECT mode, user_id, seller_ids, pointer, expires_at FROM seller_round_robin")
                     rows = cur.fetchall()
                     # 2. 删除原表
                     cur.execute("DROP TABLE seller_round_robin")
-                    # 3. 重建表，user_id允许NULL
+                    # 3. 重建表为id自增主键，mode+user_id唯一索引
                     cur.execute('''
                         CREATE TABLE seller_round_robin (
+                            id SERIAL PRIMARY KEY,
                             mode VARCHAR(8) NOT NULL,
                             user_id VARCHAR(64),
                             seller_ids TEXT NOT NULL,
                             pointer INTEGER NOT NULL DEFAULT 0,
-                            expires_at TIMESTAMP,
-                            PRIMARY KEY (mode, user_id)
+                            expires_at TIMESTAMP
                         );
                     ''')
+                    cur.execute('CREATE UNIQUE INDEX idx_mode_userid ON seller_round_robin(mode, user_id);')
                     # 4. 恢复数据
                     for row in rows:
                         cur.execute("INSERT INTO seller_round_robin (mode, user_id, seller_ids, pointer, expires_at) VALUES (%s, %s, %s, %s, %s)", row)
                     conn.commit()
-                    logger.info("已强制重建seller_round_robin表并恢复数据，user_id已允许NULL")
+                    logger.info("已彻底重建seller_round_robin表并恢复数据，user_id已允许NULL且无主键约束")
                 else:
-                    logger.info("seller_round_robin.user_id已允许NULL，无需迁移")
+                    logger.info("seller_round_robin.user_id已允许NULL且无主键约束，无需迁移")
             except Exception as e:
                 logger.error(f"自动迁移 seller_round_robin.user_id 允许NULL时异常: {e}")
         else:
