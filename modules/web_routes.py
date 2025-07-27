@@ -471,7 +471,7 @@ def register_routes(app, notification_queue):
 
                     # 使用原子操作创建订单
                     success, message, new_balance, credit_limit = create_order_with_deduction_atomic(
-                        file_path, "", package, order_remark, username, user_id
+                        file_path, "", package, order_remark, username, user_id, preferred_seller=seller_id
                     )
 
                     if not success:

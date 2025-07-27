@@ -1703,14 +1703,16 @@
     const originalText = button.textContent;
     
     // 防重复提交检查
-    if (button.disabled) {
+    if (button.disabled || window._isSubmittingAOrder) {
       showAlert('订单正在提交中，请勿重复点击', 'warning');
       return;
     }
-    
+    window._isSubmittingAOrder = true;
     button.disabled = true;
     button.textContent = '提交中...';
-    
+    // 禁用所有相关按钮
+    document.getElementById('manualUploadBtnA').disabled = true;
+    document.getElementById('backStepBtn').disabled = true;
     try {
       // 创建FormData
       const formData = new FormData();
@@ -1720,23 +1722,17 @@
       formData.append('remark_a', remark);
       formData.append('package', '12');
       formData.append('preferred_seller', preferredSellerIds);
-      
       const response = await fetch('/', {
         method: 'POST',
         body: formData
       });
-      
       const result = await response.json();
-      
       if (response.ok && result.success) {
         showAlert(`成功提交${orderCount}个订单！`, 'success');
-        
         // 重置表单
         resetModeA();
-        
         // 刷新订单列表
         await loadOrders();
-        
         // 更新余额显示（如果返回了）
         if (result.balance !== undefined) {
           updateBalanceDisplay(result.balance, result.credit_limit);
@@ -1748,8 +1744,13 @@
       console.error('提交订单失败:', error);
       showAlert(error.message || '提交订单失败', 'error');
     } finally {
+      window._isSubmittingAOrder = false;
       button.disabled = false;
       button.textContent = originalText;
+      document.getElementById('manualUploadBtnA').disabled = false;
+      document.getElementById('backStepBtn').disabled = false;
+      // 清空文件input，彻底防止重复提交
+      fileInput.value = '';
     }
   }
   
