@@ -844,11 +844,10 @@ def register_routes(app, notification_queue):
     @login_required
     @admin_required
     def admin_api_users():
-        """获取所有用户列表（仅限管理员）"""
         try:
             logger.info(f"管理员 {session.get('username')} (ID: {session.get('user_id')}, is_admin: {session.get('is_admin')}) 请求用户列表")
             
-        # 获取所有用户基础信息
+            # 获取所有用户基础信息
             logger.info("执行用户查询SQL...")
             users = execute_query("""
                 SELECT id, username, is_admin, created_at, last_login, balance, credit_limit 
@@ -860,55 +859,55 @@ def register_routes(app, notification_queue):
             if not users:
                 return jsonify([])
             
-        # 获取今日日期
-        today = datetime.now().strftime("%Y-%m-%d") + "%"
-        
-        # 为每个用户计算今日消费
-        user_data = []
-        for user in users:
-            try:
-                user_id = user[0]
-                username = user[1]
+            # 获取今日日期
+            today = datetime.now().strftime("%Y-%m-%d") + "%"
+            
+            # 为每个用户计算今日消费
+            user_data = []
+            for user in users:
+                try:
+                    user_id = user[0]
+                    username = user[1]
+                    
+                    # 查询该用户今日已完成订单的消费总额
+                    if DATABASE_URL and DATABASE_URL.startswith('postgres'):
+                        # PostgreSQL: 使用DATE函数比较日期
+                        today_orders = execute_query("""
+                            SELECT package FROM orders 
+                            WHERE web_user_id = %s AND DATE(created_at) = CURRENT_DATE AND status = 'completed'
+                        """, (username,), fetch=True)
+                    else:
+                        # SQLite: 使用LIKE进行字符串匹配
+                        today_orders = execute_query("""
+                            SELECT package FROM orders 
+                            WHERE web_user_id = ? AND created_at LIKE ? AND status = 'completed'
+                        """, (username, today), fetch=True)
+                    
+                    # 计算总消费额
+                    today_consumption = 0
+                    if today_orders:
+                        for order in today_orders:
+                            package = order[0]
+                            # 从常量获取套餐价格
+                            if package in WEB_PRICES:
+                                today_consumption += WEB_PRICES[package]
                 
-                # 查询该用户今日已完成订单的消费总额
-                if DATABASE_URL and DATABASE_URL.startswith('postgres'):
-                    # PostgreSQL: 使用DATE函数比较日期
-                    today_orders = execute_query("""
-                        SELECT package FROM orders 
-                        WHERE web_user_id = %s AND DATE(created_at) = CURRENT_DATE AND status = 'completed'
-                    """, (username,), fetch=True)
-                else:
-                    # SQLite: 使用LIKE进行字符串匹配
-                    today_orders = execute_query("""
-                        SELECT package FROM orders 
-                        WHERE web_user_id = ? AND created_at LIKE ? AND status = 'completed'
-                    """, (username, today), fetch=True)
-                
-                # 计算总消费额
-                today_consumption = 0
-                if today_orders:
-                    for order in today_orders:
-                        package = order[0]
-                        # 从常量获取套餐价格
-                        if package in WEB_PRICES:
-                            today_consumption += WEB_PRICES[package]
-                
-                user_data.append({
-                    "id": user_id,
-                    "username": username,
-                    "is_admin": bool(user[2]),
-                    "created_at": user[3],
-                    "last_login": user[4],
-                    "balance": user[5] if len(user) > 5 else 0,
-                    "credit_limit": user[6] if len(user) > 6 else 0,
-                    "today_consumption": today_consumption
-                })
-            except Exception as user_error:
-                logger.error(f"处理用户 {user} 时出错: {str(user_error)}")
-                continue
-        
-        logger.info(f"成功处理 {len(user_data)} 个用户数据")
-        return jsonify(user_data)
+                    user_data.append({
+                        "id": user_id,
+                        "username": username,
+                        "is_admin": bool(user[2]),
+                        "created_at": user[3],
+                        "last_login": user[4],
+                        "balance": user[5] if len(user) > 5 else 0,
+                        "credit_limit": user[6] if len(user) > 6 else 0,
+                        "today_consumption": today_consumption
+                    })
+                except Exception as user_error:
+                    logger.error(f"处理用户 {user} 时出错: {str(user_error)}")
+                    continue
+            
+            logger.info(f"成功处理 {len(user_data)} 个用户数据")
+            return jsonify(user_data)
         except Exception as e:
             logger.error(f"获取用户列表失败: {str(e)}", exc_info=True)
             return jsonify({"error": f"获取用户列表失败: {str(e)}"}), 500
