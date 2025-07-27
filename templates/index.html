@@ -1703,6 +1703,10 @@
     
     // 获取所有点ACCEPT的卖家telegram_id
     const preferredSellerIds = activeSellersData.map(s => s.telegram_id).join(',');
+    if (!preferredSellerIds) {
+      showAlert('没有卖家响应ACCEPT，无法提交订单！', 'error');
+      return;
+    }
     
     const button = document.getElementById('submitOrdersBtn');
     const originalText = button.textContent;

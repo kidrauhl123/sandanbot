@@ -714,13 +714,11 @@ async def send_notification_from_queue(data):
                 target_sellers = [seller for seller in active_sellers if str(seller.get('id', seller.get('telegram_id'))) == str(preferred_seller)]
                 if not target_sellers:
                     logger.warning(f"指定的卖家不存在或不活跃: {preferred_seller}")
-                    # 如果没有指定卖家，随机选择一个活跃卖家
-                    import random
-                    target_sellers = [random.choice(active_sellers)] if active_sellers else []
+                    # 如果没有指定卖家，推送给所有活跃卖家
+                    target_sellers = active_sellers
             else:
-                # 随机选择一个活跃卖家，而不是发给所有卖家
-                import random
-                target_sellers = [random.choice(active_sellers)] if active_sellers else []
+                # 没有指定preferred_seller，推送给所有活跃卖家
+                target_sellers = active_sellers
                 
             # 为订单添加状态标记
             await mark_order_as_processing(order_id)
