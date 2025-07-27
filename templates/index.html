@@ -1448,6 +1448,8 @@
         modeAContainer.style.display = 'block';
         modeBContainer.style.display = 'none';
         currentMode = 'A';
+        // 每次切换到A模式都重新初始化A模式功能，确保事件绑定
+        initModeA();
       } else {
         tabModeB.classList.add('active');
         modeAContainer.style.display = 'none';
@@ -1499,11 +1501,15 @@
     });
     
     // 提交订单按钮
-    document.getElementById('submitOrdersBtn').addEventListener('click', function(e) {
+    if (window._submitOrdersBtnHandler) {
+      document.getElementById('submitOrdersBtn').removeEventListener('click', window._submitOrdersBtnHandler);
+    }
+    window._submitOrdersBtnHandler = function(e) {
       e.preventDefault();
       console.log('分步下单提交按钮被点击');
       submitModeAOrders();
-    });
+    };
+    document.getElementById('submitOrdersBtn').addEventListener('click', window._submitOrdersBtnHandler);
     
     // 初始化A模式的图片上传
     initImageUploadA();
