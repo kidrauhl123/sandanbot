@@ -1507,13 +1507,12 @@
           const data = await response.json();
           updateSellersList(data.activeSellers);
           
-          // 如果有卖家响应，启用下一步按钮
+          // 如果有卖家响应，启用下一步按钮，但继续轮询以获取更多卖家响应
           if (data.activeSellers.length > 0) {
             const nextBtn = document.getElementById('nextStepBtn');
             nextBtn.disabled = false;
             nextBtn.className = 'btn btn-primary';
-            clearInterval(pollInterval);
-            return;
+            // 不停止轮询，继续等待更多卖家响应
           }
         }
       } catch (error) {
@@ -1638,7 +1637,7 @@
     const remark = document.getElementById('remarkA').value;
     
     if (!fileInput.files.length) {
-      showAlert('请上传二维码图片', 'error');
+      showCustomAlert('请上传二维码图片', 'error');
       return;
     }
     
@@ -1664,7 +1663,7 @@
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
-          showAlert(`成功提交${orderCount}个订单！`, 'success');
+          showCustomAlert(`成功提交${orderCount}个订单！`, 'success');
           
           // 重置表单
           resetModeA();
@@ -1679,7 +1678,7 @@
       }
     } catch (error) {
       console.error('提交订单失败:', error);
-      showAlert(error.message || '提交订单失败', 'error');
+      showCustomAlert(error.message || '提交订单失败', 'error');
     } finally {
       button.disabled = false;
       button.textContent = originalText;

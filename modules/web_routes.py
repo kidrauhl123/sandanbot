@@ -351,29 +351,11 @@ def register_routes(app, notification_queue):
                     "can_cancel": o[4] == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == o[6])
                 })
             
-            # 触发立即通知卖家 - 获取新创建的订单ID并加入通知队列
+            # 不标记为已通知，让periodic_order_check自然处理
             if new_order_id:
-                # 立即标记订单为已通知，避免重复处理
-                from modules.database import mark_order_notified
-                mark_order_notified(new_order_id)
-                
-                # 加入通知队列，通知类型为new_order
-                # 获取指定的接单人
-                preferred_seller = request.form.get('preferred_seller', '')
-                # 直接使用相对路径
-                logger.info(f"添加到通知队列的图片路径: {file_path}")
-                
-                notification_queue.put({
-                    'type': 'new_order',
-                    'order_id': new_order_id,
-                    'account': file_path,  # 使用相对路径
-                    'password': '',  # 不再使用密码
-                    'package': package,
-                    'preferred_seller': preferred_seller,
-                    'remark': remark  # 添加备注信息
-                })
-                logger.info(f"已将订单 #{new_order_id} 加入通知队列")
-                print(f"DEBUG: 已将订单 #{new_order_id} 加入通知队列")
+                # 订单创建成功后，系统会通过periodic_order_check自动检测并通知卖家
+                logger.info(f"订单 #{new_order_id} 已创建，等待系统自动通知卖家")
+                print(f"DEBUG: 订单 #{new_order_id} 已创建，等待系统自动通知卖家")
             else:
                 logger.warning("无法获取新创建的订单ID，无法发送通知")
                 print("WARNING: 无法获取新创建的订单ID，无法发送通知")
