@@ -465,21 +465,9 @@ def register_routes(app, notification_queue):
                         order_id = new_order[0][0]
                         created_orders.append(order_id)
                         
-                        # 标记为已通知并加入队列
-                        from modules.database import mark_order_notified
-                        mark_order_notified(order_id)
-                        
-                        notification_queue.put({
-                            'type': 'new_order',
-                            'order_id': order_id,
-                            'account': file_path,
-                            'password': '',
-                            'package': package,
-                            'preferred_seller': '',  # A模式不指定卖家
-                            'remark': order_remark
-                        })
-                        
-                        logger.info(f"A模式订单 #{order_id} 创建成功并加入通知队列")
+                        # 不标记为已通知，让periodic_order_check自然处理
+                        # 这样订单会被系统自动分配给活跃卖家
+                        logger.info(f"A模式订单 #{order_id} 已创建，等待系统自动通知卖家")
                 
                 except Exception as e:
                     logger.error(f"创建第{i+1}个订单时出错: {str(e)}")
