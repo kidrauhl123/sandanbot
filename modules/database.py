@@ -2017,8 +2017,9 @@ def get_next_seller_a_mode(user_id):
         return None
     try:
         cur = conn.cursor()
-        # 查询缓存
-        cur.execute("SELECT seller_ids, pointer, expires_at FROM seller_round_robin WHERE mode='A' AND user_id=%s" if is_postgres() else "SELECT seller_ids, pointer, expires_at FROM seller_round_robin WHERE mode='A' AND user_id=?", (user_id,))
+        # 查询缓存，强制user_id为字符串
+        user_id_str = str(user_id)
+        cur.execute("SELECT seller_ids, pointer, expires_at FROM seller_round_robin WHERE mode='A' AND user_id=%s" if is_postgres() else "SELECT seller_ids, pointer, expires_at FROM seller_round_robin WHERE mode='A' AND user_id=?", (user_id_str,))
         row = cur.fetchone()
         if not row:
             return None
@@ -2045,17 +2046,18 @@ def set_seller_pointer_a_mode(user_id, new_pointer, seller_ids, expires_at):
     try:
         cur = conn.cursor()
         ids_str = ','.join(seller_ids)
+        user_id_str = str(user_id)
         if is_postgres():
             cur.execute("""
                 INSERT INTO seller_round_robin (mode, user_id, seller_ids, pointer, expires_at)
                 VALUES ('A', %s, %s, %s, %s)
                 ON CONFLICT (mode, user_id) DO UPDATE SET seller_ids=EXCLUDED.seller_ids, pointer=EXCLUDED.pointer, expires_at=EXCLUDED.expires_at
-            """, (user_id, ids_str, new_pointer, expires_at))
+            """, (user_id_str, ids_str, new_pointer, expires_at))
         else:
             cur.execute("""
                 INSERT OR REPLACE INTO seller_round_robin (mode, user_id, seller_ids, pointer, expires_at)
                 VALUES ('A', ?, ?, ?, ?)
-            """, (user_id, ids_str, new_pointer, expires_at))
+            """, (user_id_str, ids_str, new_pointer, expires_at))
         conn.commit()
     finally:
         conn.close() 
