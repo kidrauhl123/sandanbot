@@ -1910,18 +1910,35 @@ def create_seller_round_robin_table():
             ''')
             # 自动迁移，允许user_id为NULL
             try:
-                # 检查user_id是否NOT NULL
                 cur.execute("SELECT is_nullable FROM information_schema.columns WHERE table_name='seller_round_robin' AND column_name='user_id'")
                 nullable = cur.fetchone()
                 if nullable and nullable[0] == 'NO':
-                    logger.info("检测到seller_round_robin.user_id为NOT NULL，执行DROP NOT NULL迁移...")
-                    cur.execute("ALTER TABLE seller_round_robin ALTER COLUMN user_id DROP NOT NULL;")
+                    logger.info("检测到seller_round_robin.user_id为NOT NULL，执行强制重建表结构迁移...")
+                    # 1. 备份原数据
+                    cur.execute("SELECT mode, user_id, seller_ids, pointer, expires_at FROM seller_round_robin")
+                    rows = cur.fetchall()
+                    # 2. 删除原表
+                    cur.execute("DROP TABLE seller_round_robin")
+                    # 3. 重建表，user_id允许NULL
+                    cur.execute('''
+                        CREATE TABLE seller_round_robin (
+                            mode VARCHAR(8) NOT NULL,
+                            user_id VARCHAR(64),
+                            seller_ids TEXT NOT NULL,
+                            pointer INTEGER NOT NULL DEFAULT 0,
+                            expires_at TIMESTAMP,
+                            PRIMARY KEY (mode, user_id)
+                        );
+                    ''')
+                    # 4. 恢复数据
+                    for row in rows:
+                        cur.execute("INSERT INTO seller_round_robin (mode, user_id, seller_ids, pointer, expires_at) VALUES (%s, %s, %s, %s, %s)", row)
                     conn.commit()
-                    logger.info("已成功将seller_round_robin.user_id改为允许NULL")
+                    logger.info("已强制重建seller_round_robin表并恢复数据，user_id已允许NULL")
                 else:
                     logger.info("seller_round_robin.user_id已允许NULL，无需迁移")
             except Exception as e:
-                logger.info(f"自动迁移 seller_round_robin.user_id 允许NULL时异常: {e}")
+                logger.error(f"自动迁移 seller_round_robin.user_id 允许NULL时异常: {e}")
         else:
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS seller_round_robin (
