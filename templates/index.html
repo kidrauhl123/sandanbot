@@ -1721,7 +1721,7 @@
       formData.append('package', '12');
       formData.append('preferred_seller', preferredSellerIds);
       
-      const response = await fetch('/create_order', {
+      const response = await fetch('/', {
         method: 'POST',
         body: formData
       });
