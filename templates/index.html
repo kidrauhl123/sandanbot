@@ -1076,6 +1076,11 @@
       cursor: default;
     }
   </style>
+  <!-- 在页面head中引入dayjs及其插件 -->
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/utc.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/timezone.js"></script>
+  <script>dayjs.extend(window.dayjs_plugin_utc);dayjs.extend(window.dayjs_plugin_timezone);</script>
 </head>
 <body>
 <div class="navbar">
@@ -1348,22 +1353,22 @@
 </div>
 
 <script>
-  // 时间格式化函数 - 显示中国时间
+  // 时间格式化函数 - 显示中国时间（修正未来一天问题）
   function formatDateTime(dateString) {
     if (!dateString) return '未知';
+    // 使用dayjs库并强制+8时区
+    if (window.dayjs) {
+      return window.dayjs(dateString).add(8, 'hour').format('YYYY-MM-DD HH:mm:ss');
+    }
+    // 兜底方案
     const date = new Date(dateString);
-    // 转换为中国时间（Asia/Shanghai时区）
-    const options = {
-      timeZone: 'Asia/Shanghai',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    };
-    return date.toLocaleString('zh-CN', options).replace(/\//g, '-');
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const h = String(date.getHours()).padStart(2, '0');
+    const min = String(date.getMinutes()).padStart(2, '0');
+    const s = String(date.getSeconds()).padStart(2, '0');
+    return `${y}-${m}-${d} ${h}:${min}:${s}`;
   }
 
   // 全局变量

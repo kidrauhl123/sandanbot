@@ -461,7 +461,7 @@ def register_routes(app, notification_queue):
             for i in range(order_count):
                 try:
                     # 每个订单使用相同的图片但不同的备注
-                    order_remark = f"[A模式批量下单 {i+1}/{order_count}] {remark}" if remark else f"[A模式批量下单 {i+1}/{order_count}]"
+                    order_remark = remark
 
                     # 指定preferred_seller分流
                     seller_id = ''
@@ -502,7 +502,7 @@ def register_routes(app, notification_queue):
                             'account': file_path,
                             'password': '',
                             'package': package,
-                            'preferred_seller': seller_id,  # 只分配给点ACCEPT的卖家
+                            'preferred_seller': seller_id if seller_id else None,  # 只分配给点ACCEPT的卖家
                             'remark': order_remark
                         })
 
