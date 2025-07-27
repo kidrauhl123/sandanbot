@@ -1033,13 +1033,11 @@ async def on_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"接单时出错: {str(e)}", exc_info=True)
             await query.answer("接单失败，请稍后重试", show_alert=True)
-        return
     elif data.startswith("availability_accept_"):
         # 处理可用性检查的ACCEPT响应
         username = data.replace('availability_accept_', '')
         logger.info(f"收到可用性ACCEPT回调: user_id={user_id}, username={username}, data={data}")
         await handle_availability_accept(query, user_id, username)
-        return
         
     elif data.startswith("feedback:"):
         # 内联实现反馈按钮逻辑，替代 on_feedback_button 函数
@@ -1066,11 +1064,9 @@ async def on_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return await on_callback_query(update, context)
             else:
                 await query.answer("未知的反馈操作", show_alert=True)
-                return
         except Exception as e:
             logger.error(f"处理反馈按钮时出错: {str(e)}", exc_info=True)
             await query.answer("处理反馈失败，请稍后重试", show_alert=True)
-        return
     elif data.startswith("problem_"):
         oid = int(data.split('_')[1])
         

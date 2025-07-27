@@ -115,7 +115,7 @@ def init_db():
     logger.info(f"初始化数据库，使用连接: {DATABASE_URL[:10] if DATABASE_URL else 'SQLite'}...")
 
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
-        init_postgres_db()
+    init_postgres_db()
         # 确保创建用户定制价格表
         try:
             execute_query("""
@@ -1745,7 +1745,7 @@ def get_user_custom_prices(user_id):
             logger.warning(f"用户定制价格表不存在，返回空字典: {str(e)}")
             return {}
         else:
-            logger.error(f"获取用户定制价格失败: {str(e)}", exc_info=True)
+        logger.error(f"获取用户定制价格失败: {str(e)}", exc_info=True)
         return {}
 
 def set_user_custom_price(user_id, package, price, admin_id):

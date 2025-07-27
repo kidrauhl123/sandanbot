@@ -150,7 +150,7 @@ def register_routes(app, notification_queue):
                                    username=session.get('username'),
                                    is_admin=session.get('is_admin'))
 
-    @app.route('/create_order', methods=['POST'])
+    @app.route('/', methods=['POST'])
     @login_required
     def create_order():
         # 检查下单模式
@@ -351,11 +351,29 @@ def register_routes(app, notification_queue):
                     "can_cancel": o[4] == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == o[6])
                 })
             
-            # 不标记为已通知，让periodic_order_check自然处理
+            # 触发立即通知卖家 - 获取新创建的订单ID并加入通知队列
             if new_order_id:
-                # 订单创建成功后，系统会通过periodic_order_check自动检测并通知卖家
-                logger.info(f"订单 #{new_order_id} 已创建，等待系统自动通知卖家")
-                print(f"DEBUG: 订单 #{new_order_id} 已创建，等待系统自动通知卖家")
+                # 立即标记订单为已通知，避免重复处理
+                from modules.database import mark_order_notified
+                mark_order_notified(new_order_id)
+                
+                # 加入通知队列，通知类型为new_order
+                # 获取指定的接单人
+                preferred_seller = request.form.get('preferred_seller', '')
+                # 直接使用相对路径
+                logger.info(f"添加到通知队列的图片路径: {file_path}")
+                
+                notification_queue.put({
+                    'type': 'new_order',
+                    'order_id': new_order_id,
+                    'account': file_path,  # 使用相对路径
+                    'password': '',  # 不再使用密码
+                    'package': package,
+                    'preferred_seller': preferred_seller,
+                    'remark': remark  # 添加备注信息
+                })
+                logger.info(f"已将订单 #{new_order_id} 加入通知队列")
+                print(f"DEBUG: 已将订单 #{new_order_id} 加入通知队列")
             else:
                 logger.warning("无法获取新创建的订单ID，无法发送通知")
                 print("WARNING: 无法获取新创建的订单ID，无法发送通知")
@@ -432,20 +450,30 @@ def register_routes(app, notification_queue):
             user_id = session.get('user_id')
             username = session.get('username')
             
+            # 获取所有点ACCEPT的卖家
+            preferred_seller = request.form.get('preferred_seller', '').strip()
+            preferred_seller_ids = [s for s in preferred_seller.split(',') if s]
+
             # 批量创建订单
             created_orders = []
             total_cost = 0
-            
+
             for i in range(order_count):
                 try:
                     # 每个订单使用相同的图片但不同的备注
                     order_remark = f"[A模式批量下单 {i+1}/{order_count}] {remark}" if remark else f"[A模式批量下单 {i+1}/{order_count}]"
-                    
+
+                    # 指定preferred_seller分流
+                    seller_id = ''
+                    if preferred_seller_ids:
+                        # 轮流分配给响应的卖家
+                        seller_id = preferred_seller_ids[i % len(preferred_seller_ids)]
+
                     # 使用原子操作创建订单
                     success, message, new_balance, credit_limit = create_order_with_deduction_atomic(
                         file_path, "", package, order_remark, username, user_id
                     )
-                    
+
                     if not success:
                         # 如果创建失败，返回错误信息
                         logger.warning(f"A模式第{i+1}个订单创建失败: {message}")
@@ -455,7 +483,7 @@ def register_routes(app, notification_queue):
                             "balance": new_balance,
                             "credit_limit": credit_limit
                         }), 400
-                    
+
                     # 获取新创建的订单ID
                     new_order = execute_query(
                         "SELECT id FROM orders WHERE web_user_id = ? ORDER BY id DESC LIMIT 1", 
@@ -464,11 +492,22 @@ def register_routes(app, notification_queue):
                     if new_order:
                         order_id = new_order[0][0]
                         created_orders.append(order_id)
-                        
-                        # 不标记为已通知，让periodic_order_check自然处理
-                        # 这样订单会被系统自动分配给活跃卖家
-                        logger.info(f"A模式订单 #{order_id} 已创建，等待系统自动通知卖家")
-                
+
+                        from modules.database import mark_order_notified
+                        mark_order_notified(order_id)
+
+                        notification_queue.put({
+                            'type': 'new_order',
+                            'order_id': order_id,
+                            'account': file_path,
+                            'password': '',
+                            'package': package,
+                            'preferred_seller': seller_id,  # 只分配给点ACCEPT的卖家
+                            'remark': order_remark
+                        })
+
+                        logger.info(f"A模式订单 #{order_id} 创建成功并加入通知队列，分配给: {seller_id}")
+
                 except Exception as e:
                     logger.error(f"创建第{i+1}个订单时出错: {str(e)}")
                     return jsonify({
@@ -809,29 +848,29 @@ def register_routes(app, notification_queue):
         try:
             logger.info(f"管理员 {session.get('username')} (ID: {session.get('user_id')}, is_admin: {session.get('is_admin')}) 请求用户列表")
             
-            # 获取所有用户基础信息
+        # 获取所有用户基础信息
             logger.info("执行用户查询SQL...")
-            users = execute_query("""
-                SELECT id, username, is_admin, created_at, last_login, balance, credit_limit 
-                FROM users ORDER BY created_at DESC
-            """, fetch=True)
+        users = execute_query("""
+            SELECT id, username, is_admin, created_at, last_login, balance, credit_limit 
+            FROM users ORDER BY created_at DESC
+        """, fetch=True)
         
             logger.info(f"查询到 {len(users) if users else 0} 个用户")
             
             if not users:
                 return jsonify([])
             
-            # 获取今日日期
-            today = datetime.now().strftime("%Y-%m-%d") + "%"
-            
-            # 为每个用户计算今日消费
-            user_data = []
-            for user in users:
+        # 获取今日日期
+        today = datetime.now().strftime("%Y-%m-%d") + "%"
+        
+        # 为每个用户计算今日消费
+        user_data = []
+        for user in users:
                 try:
-                    user_id = user[0]
-                    username = user[1]
-                    
-                    # 查询该用户今日已完成订单的消费总额
+            user_id = user[0]
+            username = user[1]
+            
+            # 查询该用户今日已完成订单的消费总额
                     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
                         # PostgreSQL: 使用DATE函数比较日期
                         today_orders = execute_query("""
@@ -840,36 +879,36 @@ def register_routes(app, notification_queue):
                         """, (username,), fetch=True)
                     else:
                         # SQLite: 使用LIKE进行字符串匹配
-                        today_orders = execute_query("""
-                            SELECT package FROM orders 
-                            WHERE web_user_id = ? AND created_at LIKE ? AND status = 'completed'
-                        """, (username, today), fetch=True)
-                    
-                    # 计算总消费额
-                    today_consumption = 0
+            today_orders = execute_query("""
+                SELECT package FROM orders 
+                WHERE web_user_id = ? AND created_at LIKE ? AND status = 'completed'
+            """, (username, today), fetch=True)
+            
+            # 计算总消费额
+            today_consumption = 0
                     if today_orders:
-                        for order in today_orders:
-                            package = order[0]
-                            # 从常量获取套餐价格
-                            if package in WEB_PRICES:
-                                today_consumption += WEB_PRICES[package]
-                    
-                    user_data.append({
-                        "id": user_id,
-                        "username": username,
-                        "is_admin": bool(user[2]),
-                        "created_at": user[3],
-                        "last_login": user[4],
-                        "balance": user[5] if len(user) > 5 else 0,
-                        "credit_limit": user[6] if len(user) > 6 else 0,
-                        "today_consumption": today_consumption
-                    })
+            for order in today_orders:
+                package = order[0]
+                # 从常量获取套餐价格
+                if package in WEB_PRICES:
+                    today_consumption += WEB_PRICES[package]
+            
+            user_data.append({
+                "id": user_id,
+                "username": username,
+                "is_admin": bool(user[2]),
+                "created_at": user[3],
+                "last_login": user[4],
+                "balance": user[5] if len(user) > 5 else 0,
+                "credit_limit": user[6] if len(user) > 6 else 0,
+                "today_consumption": today_consumption
+            })
                 except Exception as user_error:
                     logger.error(f"处理用户 {user} 时出错: {str(user_error)}")
                     continue
-            
+        
             logger.info(f"成功处理 {len(user_data)} 个用户数据")
-            return jsonify(user_data)
+        return jsonify(user_data)
         except Exception as e:
             logger.error(f"获取用户列表失败: {str(e)}", exc_info=True)
             return jsonify({"error": f"获取用户列表失败: {str(e)}"}), 500
