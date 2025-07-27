@@ -2017,7 +2017,7 @@ def get_next_seller_a_mode(user_id):
         return None
     try:
         cur = conn.cursor()
-        # 查询缓存，强制user_id为字符串
+        # 查询缓存
         user_id_str = str(user_id)
         cur.execute("SELECT seller_ids, pointer, expires_at FROM seller_round_robin WHERE mode='A' AND user_id=%s" if is_postgres() else "SELECT seller_ids, pointer, expires_at FROM seller_round_robin WHERE mode='A' AND user_id=?", (user_id_str,))
         row = cur.fetchone()

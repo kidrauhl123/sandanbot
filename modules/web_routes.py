@@ -1356,6 +1356,11 @@ def register_routes(app, notification_queue):
                     "SELECT telegram_id, nickname FROM sellers WHERE is_active = 1", 
                     fetch=True
                 )
+            # 去重，确保每个卖家只发一次通知
+            unique_sellers = {}
+            for telegram_id, nickname in active_sellers:
+                unique_sellers[str(telegram_id)] = nickname
+            active_sellers = [(tid, unique_sellers[tid]) for tid in unique_sellers]
             
             if not active_sellers:
                 return jsonify({"error": "当前没有活跃的卖家"}), 400
@@ -1365,23 +1370,25 @@ def register_routes(app, notification_queue):
             global_seller_responses[username] = {}
             logger.info(f"已清空用户 {username} 的历史响应记录")
             
-            # 发送TG通知给所有活跃卖家（去重）
+            # 发送TG通知给所有活跃卖家
             from modules.telegram_bot import send_availability_check
             import threading
+            
             def send_notifications():
+                """在单独线程中发送通知"""
                 import asyncio
+                
                 async def send_all_notifications():
                     tasks = []
-                    sent_ids = set()
                     for seller in active_sellers:
                         telegram_id, nickname = seller
-                        if telegram_id in sent_ids:
-                            continue
-                        sent_ids.add(telegram_id)
                         task = send_availability_check(telegram_id, username)
                         tasks.append(task)
+                    
                     if tasks:
                         await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # 在新的事件循环中运行
                 try:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
@@ -1390,6 +1397,8 @@ def register_routes(app, notification_queue):
                     logger.error(f"发送通知失败: {str(e)}")
                 finally:
                     loop.close()
+            
+            # 在后台线程中发送通知
             notification_thread = threading.Thread(target=send_notifications, daemon=True)
             notification_thread.start()
             
