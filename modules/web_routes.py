@@ -845,7 +845,7 @@ def register_routes(app, notification_queue):
                 SELECT id, username, is_admin, created_at, last_login, balance, credit_limit 
                 FROM users ORDER BY created_at DESC
             """, fetch=True)
-            
+        
             logger.info(f"查询到 {len(users) if users else 0} 个用户")
             
             if not users:

@@ -1036,37 +1036,9 @@
       font-style: italic;
     }
 
-    /* 卖家信息相关样式 */
-    .seller-info {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px 12px;
-      background: #f8f9fa;
-      border-radius: 8px;
-      margin-top: 10px;
-      font-size: 13px;
-    }
+    /* 删除了卖家信息相关样式 - 不再需要 */
 
-    .seller-status {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .seller-active-status {
-      color: #28a745;
-      font-weight: 600;
-    }
-
-    .seller-active-status.inactive {
-      color: #dc3545;
-    }
-
-    .seller-orders-status {
-      color: #6c757d;
-      font-size: 12px;
-      margin-top: 3px;
-    }
+    /* 删除了seller-orders-status样式 - 不再需要 */
 
     /* 已确认按钮样式 */
     .confirm-btn.confirmed {
@@ -1279,27 +1251,9 @@
                       box-shadow: 0 2px 8px rgba(0,0,0,0.1);
                     }
                   </style>
-                  <div class="form-group">
-                    <label>套餐类型</label>
-                    <select name="package" class="form-control" id="packageSelect" required>
-                      <option value="12">一年个人会员</option>
-                    </select>
-                  </div>
+                  <!-- 隐藏字段：固定套餐为12个月 -->
+                  <input name="package" type="hidden" value="12">
                   
-                  <div class="form-group">
-                    <label>指定接单人 <small class="text-muted">(可选)</small></label>
-                    <select name="preferred_seller" class="form-control" id="sellerSelect">
-                      <option value="">自动分配接单人</option>
-                      <!-- 卖家列表由JavaScript加载 -->
-                    </select>
-                    <div id="sellerInfo" class="seller-info" style="display:none; margin-top:10px;">
-                      <div class="seller-status">
-                        <span class="seller-active-status"></span>
-                        <span class="seller-orders-status"></span>
-                      </div>
-                      <button type="button" id="checkSellerBtn" class="btn btn-sm btn-info">检查在线</button>
-                    </div>
-                  </div>
                   <div class="form-group">
                     <label>价格</label>
                     <div class="price-display">¥<span id="selectedPrice">20</span></div>
@@ -1775,122 +1729,21 @@
     }
   }
   
-  // 更新价格显示
+  // 更新价格显示 - 修改为固定12个月套餐
   function updatePriceDisplay() {
-    const packageSelect = document.getElementById('packageSelect');
     const selectedPrice = document.getElementById('selectedPrice');
     
-    if (packageSelect && selectedPrice) {
-      // 显示当前选中套餐的价格
-      selectedPrice.textContent = USER_PRICES[packageSelect.value];
+    if (selectedPrice) {
+      // 显示固定的12个月套餐价格
+      selectedPrice.textContent = USER_PRICES['12'];
     }
   }
   
-  // 加载活跃卖家列表
-  async function loadActiveSellers() {
-    try {
-      const response = await fetch('/api/active-sellers');
-      if (!response.ok) {
-        console.error('获取卖家列表失败:', response.status);
-        return;
-      }
-      
-      const data = await response.json();
-      
-      if (data.success && data.sellers && data.sellers.length > 0) {
-        const sellerSelect = document.getElementById('sellerSelect');
-        
-        // 先保留默认选项
-        const defaultOption = sellerSelect.options[0];
-        sellerSelect.innerHTML = '';
-        sellerSelect.appendChild(defaultOption);
-        
-        // 添加卖家选项
-        data.sellers.forEach(seller => {
-          const option = document.createElement('option');
-          option.value = seller.id;
-          option.textContent = seller.name;
-          option.dataset.lastActive = seller.last_active_at || '';
-          option.dataset.activeStatus = seller.active_status || '未知';
-          option.dataset.desiredOrders = seller.desired_orders || 0;
-          sellerSelect.appendChild(option);
-        });
-        
-        // 添加选择事件
-        sellerSelect.addEventListener('change', updateSellerInfo);
-        
-        // 初始化检查按钮事件
-        document.getElementById('checkSellerBtn').addEventListener('click', checkSellerActivity);
-      }
-    } catch (error) {
-      console.error('获取卖家列表失败:', error);
-    }
-  }
+  // 删除了loadActiveSellers函数 - 不再需要卖家选择功能
 
-  // 更新卖家信息
-  function updateSellerInfo() {
-    const sellerSelect = document.getElementById('sellerSelect');
-    const sellerInfo = document.getElementById('sellerInfo');
-    const activeStatus = sellerInfo.querySelector('.seller-active-status');
-    const ordersStatus = sellerInfo.querySelector('.seller-orders-status');
-    
-    if (sellerSelect.value) {
-      const selectedOption = sellerSelect.options[sellerSelect.selectedIndex];
-      const status = selectedOption.dataset.activeStatus || '未知';
-      const desiredOrders = selectedOption.dataset.desiredOrders || 0;
-      
-      activeStatus.textContent = `状态: ${status}`;
-      
-      // 根据活跃时间设置样式
-      if (status.includes('刚刚') || status.includes('分钟')) {
-        activeStatus.className = 'seller-active-status';
-      } else {
-        activeStatus.className = 'seller-active-status inactive';
-      }
-      
-      // 显示期望接单数
-      ordersStatus.textContent = `期望接单: ${desiredOrders} 单/小时`;
-      
-      // 显示卖家信息区域
-      sellerInfo.style.display = 'flex';
-    } else {
-      // 隐藏卖家信息区域
-      sellerInfo.style.display = 'none';
-    }
-  }
+  // 删除了updateSellerInfo函数 - 不再需要卖家信息更新功能
 
-  // 检查卖家活跃度
-  async function checkSellerActivity() {
-    const sellerSelect = document.getElementById('sellerSelect');
-    const sellerId = sellerSelect.value;
-    
-    if (!sellerId) return;
-    
-    try {
-      const checkBtn = document.getElementById('checkSellerBtn');
-      checkBtn.disabled = true;
-      checkBtn.textContent = '检查中...';
-      
-      const response = await fetch(`/api/check-seller-activity/${sellerId}`, {
-        method: 'POST'
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        showCustomAlert('已发送在线检查请求，请等待卖家回应', 'success');
-      } else {
-        showCustomAlert(result.message || '检查失败', 'error');
-      }
-    } catch (error) {
-      console.error('检查卖家活跃度失败:', error);
-      showCustomAlert('检查失败，请重试', 'error');
-    } finally {
-      const checkBtn = document.getElementById('checkSellerBtn');
-      checkBtn.disabled = false;
-      checkBtn.textContent = '检查在线';
-    }
-  }
+  // 删除了checkSellerActivity函数 - 不再需要卖家活跃度检查功能
   
   // 处理图片上传（拖放和粘贴）
   function initImageUpload() {
@@ -2102,9 +1955,6 @@
     // 加载用户定制价格
     loadUserPrices();
     
-    // 加载活跃卖家列表
-    loadActiveSellers();
-    
     // 搜索功能初始化
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
@@ -2141,17 +1991,11 @@
       renderOrders(allOrders);
     });
 
-    // 套餐选择处理
-    const packageSelect = document.getElementById('packageSelect');
+    // 价格设置 - 固定为12个月套餐
     const selectedPrice = document.getElementById('selectedPrice');
     
-    // 初始价格设置
-    selectedPrice.textContent = USER_PRICES[packageSelect.value];
-    
-    // 监听套餐选择变化
-    packageSelect.addEventListener('change', function() {
-      selectedPrice.textContent = USER_PRICES[this.value];
-    });
+    // 设置固定价格（12个月套餐）
+    selectedPrice.textContent = USER_PRICES['12'];
     
     // 加载订单
     loadOrders();

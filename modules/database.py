@@ -137,12 +137,12 @@ def init_db():
     else:
         logger.info("使用SQLite数据库")
         init_sqlite_db()
-
+    
     # 创建充值记录表和余额记录表
     logger.info("正在创建充值记录表和余额记录表...")
     create_recharge_tables()
     logger.info("充值记录表和余额记录表创建完成")
-
+    
     # 创建激活码表
     logger.info("正在创建激活码表...")
     create_activation_code_table()
@@ -1746,7 +1746,7 @@ def get_user_custom_prices(user_id):
             return {}
         else:
             logger.error(f"获取用户定制价格失败: {str(e)}", exc_info=True)
-            return {}
+        return {}
 
 def set_user_custom_price(user_id, package, price, admin_id):
     """
