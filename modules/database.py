@@ -361,6 +361,14 @@ def init_postgres_db():
         c.execute("ALTER TABLE orders ADD COLUMN refunded BOOLEAN DEFAULT FALSE")
         conn.commit()
     
+    # 检查sellers表是否需要添加distribution列
+    try:
+        c.execute("SELECT distribution FROM sellers LIMIT 1")
+    except psycopg2.errors.UndefinedColumn:
+        logger.info("为sellers表添加distribution列")
+        c.execute("ALTER TABLE sellers ADD COLUMN distribution BOOLEAN DEFAULT TRUE")
+        conn.commit()
+    
     # 创建超级管理员账号（如果不存在）
     admin_hash = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
     c.execute("SELECT id FROM users WHERE username = %s", (ADMIN_USERNAME,))
