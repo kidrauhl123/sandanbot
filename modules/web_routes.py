@@ -150,7 +150,7 @@ def register_routes(app, notification_queue):
                                    username=session.get('username'),
                                    is_admin=session.get('is_admin'))
 
-    @app.route('/', methods=['POST'])
+    @app.route('/create_order', methods=['POST'])
     @login_required
     def create_order():
         # 检查下单模式
