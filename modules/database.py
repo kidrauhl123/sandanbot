@@ -1910,10 +1910,18 @@ def create_seller_round_robin_table():
             ''')
             # 自动迁移，允许user_id为NULL
             try:
-                cur.execute("ALTER TABLE seller_round_robin ALTER COLUMN user_id DROP NOT NULL;")
-                conn.commit()
+                # 检查user_id是否NOT NULL
+                cur.execute("SELECT is_nullable FROM information_schema.columns WHERE table_name='seller_round_robin' AND column_name='user_id'")
+                nullable = cur.fetchone()
+                if nullable and nullable[0] == 'NO':
+                    logger.info("检测到seller_round_robin.user_id为NOT NULL，执行DROP NOT NULL迁移...")
+                    cur.execute("ALTER TABLE seller_round_robin ALTER COLUMN user_id DROP NOT NULL;")
+                    conn.commit()
+                    logger.info("已成功将seller_round_robin.user_id改为允许NULL")
+                else:
+                    logger.info("seller_round_robin.user_id已允许NULL，无需迁移")
             except Exception as e:
-                pass
+                logger.info(f"自动迁移 seller_round_robin.user_id 允许NULL时异常: {e}")
         else:
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS seller_round_robin (
