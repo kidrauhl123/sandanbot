@@ -2032,3 +2032,7 @@ def get_db_connection():
         db_path = os.environ.get('SQLITE_PATH') or 'orders.db'
         conn = sqlite3.connect(db_path)
         return conn
+
+def is_postgres():
+    db_url = os.environ.get('DATABASE_URL') or globals().get('DATABASE_URL')
+    return db_url and db_url.startswith('postgres')
