@@ -1908,6 +1908,12 @@ def create_seller_round_robin_table():
                     PRIMARY KEY (mode, user_id)
                 );
             ''')
+            # 自动迁移，允许user_id为NULL
+            try:
+                cur.execute("ALTER TABLE seller_round_robin ALTER COLUMN user_id DROP NOT NULL;")
+                conn.commit()
+            except Exception as e:
+                pass
         else:
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS seller_round_robin (
