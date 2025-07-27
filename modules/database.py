@@ -2008,3 +2008,27 @@ def set_seller_pointer_a_mode(user_id, new_pointer, seller_ids, expires_at):
         conn.commit()
     finally:
         conn.close() 
+
+# 数据库连接函数，兼容PostgreSQL和SQLite
+
+def get_db_connection():
+    db_url = os.environ.get('DATABASE_URL') or globals().get('DATABASE_URL')
+    if db_url and db_url.startswith('postgres'):
+        url = urlparse(db_url)
+        dbname = url.path[1:]
+        user = url.username
+        password = url.password
+        host = url.hostname
+        port = url.port
+        conn = psycopg2.connect(
+            dbname=dbname,
+            user=user,
+            password=password,
+            host=host,
+            port=port
+        )
+        return conn
+    else:
+        db_path = os.environ.get('SQLITE_PATH') or 'orders.db'
+        conn = sqlite3.connect(db_path)
+        return conn
