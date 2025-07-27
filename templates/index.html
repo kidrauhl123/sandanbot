@@ -1693,6 +1693,13 @@
     
     const button = document.getElementById('submitOrdersBtn');
     const originalText = button.textContent;
+    
+    // 防重复提交检查
+    if (button.disabled) {
+      showAlert('订单正在提交中，请勿重复点击', 'warning');
+      return;
+    }
+    
     button.disabled = true;
     button.textContent = '提交中...';
     
@@ -1704,28 +1711,30 @@
       formData.append('qr_code_a', fileInput.files[0]);
       formData.append('remark_a', remark);
       formData.append('package', '12');
-      formData.append('preferred_seller', preferredSellerIds); // 新增
+      formData.append('preferred_seller', preferredSellerIds);
       
       const response = await fetch('/create_order', {
         method: 'POST',
         body: formData
       });
       
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          showAlert(`成功提交${orderCount}个订单！`, 'success');
-          
-          // 重置表单
-          resetModeA();
-          
-          // 刷新订单列表
-          loadOrders();
-        } else {
-          throw new Error(result.error || '提交失败');
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
+        showAlert(`成功提交${orderCount}个订单！`, 'success');
+        
+        // 重置表单
+        resetModeA();
+        
+        // 刷新订单列表
+        await loadOrders();
+        
+        // 更新余额显示（如果返回了）
+        if (result.balance !== undefined) {
+          updateBalanceDisplay(result.balance, result.credit_limit);
         }
       } else {
-        throw new Error('网络请求失败');
+        throw new Error(result.error || '提交失败');
       }
     } catch (error) {
       console.error('提交订单失败:', error);
