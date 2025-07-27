@@ -1745,8 +1745,8 @@ def get_user_custom_prices(user_id):
             logger.warning(f"用户定制价格表不存在，返回空字典: {str(e)}")
             return {}
         else:
-        logger.error(f"获取用户定制价格失败: {str(e)}", exc_info=True)
-        return {}
+            logger.error(f"获取用户定制价格失败: {str(e)}", exc_info=True)
+            return {}
 
 def set_user_custom_price(user_id, package, price, admin_id):
     """
