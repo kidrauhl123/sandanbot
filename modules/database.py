@@ -378,6 +378,14 @@ def init_postgres_db():
             VALUES (%s, %s, 1, %s)
         """, (ADMIN_USERNAME, admin_hash, get_china_time()))
     
+    # 允许user_id为NULL
+    try:
+        c.execute("ALTER TABLE seller_round_robin ALTER COLUMN user_id DROP NOT NULL")
+        conn.commit()
+        logger.info("已允许seller_round_robin.user_id为NULL")
+    except Exception as e:
+        logger.info(f"无需修改seller_round_robin.user_id约束或已修改: {e}")
+    
     conn.close()
 
 # 数据库执行函数
