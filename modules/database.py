@@ -115,7 +115,7 @@ def init_db():
     logger.info(f"初始化数据库，使用连接: {DATABASE_URL[:10] if DATABASE_URL else 'SQLite'}...")
 
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
-    init_postgres_db()
+        init_postgres_db()
         # 确保创建用户定制价格表
         try:
             execute_query("""
