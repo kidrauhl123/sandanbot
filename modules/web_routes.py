@@ -20,7 +20,9 @@ from modules.database import (
     get_pending_recharge_requests, approve_recharge_request, reject_recharge_request, toggle_seller_admin,
     get_balance_records, get_activation_code, mark_activation_code_used, create_activation_code,
     get_admin_activation_codes, get_user_custom_prices, set_user_custom_price, delete_user_custom_price,
-    get_active_sellers, update_seller_nickname, check_seller_activity
+    get_active_sellers, update_seller_nickname, check_seller_activity,
+    get_next_seller_b_mode, set_seller_pointer_b_mode,
+    get_next_seller_a_mode, set_seller_pointer_a_mode
 )
 import modules.constants as constants
 
@@ -259,43 +261,17 @@ def register_routes(app, notification_queue):
         package = request.form.get('package', '12')  # 默认为12个月
         remark = request.form.get('remark', '')
         
-        # 获取指定的接单人
+        # 获取指定的接单人（B模式自动分流）
+        from modules.database import get_next_seller_b_mode, set_seller_pointer_b_mode
         preferred_seller = request.form.get('preferred_seller', '')
-        if preferred_seller:
-            # 检查该卖家是否已有3个未确认订单
-            unconfirmed_orders_query = """
-                SELECT COUNT(*) FROM orders 
-                WHERE accepted_by = ? 
-                AND status = ? 
-                AND completed_at IS NULL
-            """
-            unconfirmed_count = execute_query(
-                unconfirmed_orders_query, 
-                (preferred_seller, STATUS['ACCEPTED']), 
-                fetch=True
-            )[0][0]
-            
-            if unconfirmed_count >= 3:
-                logger.warning(f"订单提交失败: 卖家 {preferred_seller} 已有 {unconfirmed_count} 个未确认订单")
-                return jsonify({
-                    "success": False, 
-                    "error": "该卖家已有3个未确认订单，请选择其他卖家或等待卖家完成现有订单"
-                }), 400
-            
-            # 查询卖家昵称
-            seller_info = execute_query(
-                "SELECT nickname, first_name, username FROM sellers WHERE telegram_id = ?",
-                (preferred_seller,),
-                fetch=True
-            )
-            display_name = None
-            if seller_info:
-                nickname, first_name, username = seller_info[0]
-                display_name = nickname or first_name or username
-            if not display_name:
-                display_name = "指定卖家"
-            remark = f"[指定接单人:{display_name}] {remark}"
-            logger.info(f"用户指定接单人: {preferred_seller} ({display_name})")
+        if not preferred_seller:
+            # 自动分流，获取下一个分流中卖家
+            result = get_next_seller_b_mode()
+            if not result:
+                logger.warning("没有可用的分流卖家")
+                return jsonify({"success": False, "error": "没有可用的分流卖家"}), 400
+            next_id, seller_ids, idx = result
+            preferred_seller = next_id
         
         logger.info(f"收到订单提交请求: 二维码={file_path}, 套餐={package}, 指定接单人={preferred_seller or '无'}")
         
@@ -353,25 +329,20 @@ def register_routes(app, notification_queue):
             
             # 触发立即通知卖家 - 获取新创建的订单ID并加入通知队列
             if new_order_id:
-                # 立即标记订单为已通知，避免重复处理
                 from modules.database import mark_order_notified
                 mark_order_notified(new_order_id)
-                
-                # 加入通知队列，通知类型为new_order
-                # 获取指定的接单人
-                preferred_seller = request.form.get('preferred_seller', '')
-                # 直接使用相对路径
-                logger.info(f"添加到通知队列的图片路径: {file_path}")
-                
                 notification_queue.put({
                     'type': 'new_order',
                     'order_id': new_order_id,
-                    'account': file_path,  # 使用相对路径
-                    'password': '',  # 不再使用密码
+                    'account': file_path,
+                    'password': '',
                     'package': package,
-                    'preferred_seller': preferred_seller if preferred_seller else None,
-                    'remark': remark  # 添加备注信息
+                    'preferred_seller': preferred_seller,
+                    'remark': remark
                 })
+                # 更新分流指针
+                if not request.form.get('preferred_seller', ''):
+                    set_seller_pointer_b_mode(idx + 1, seller_ids)
                 logger.info(f"已将订单 #{new_order_id} 加入通知队列")
                 print(f"DEBUG: 已将订单 #{new_order_id} 加入通知队列")
             else:
@@ -453,29 +424,28 @@ def register_routes(app, notification_queue):
             # 获取所有点ACCEPT的卖家
             preferred_seller = request.form.get('preferred_seller', '').strip()
             preferred_seller_ids = [s for s in preferred_seller.split(',') if s]
-
+            # 10分钟有效期
+            expires_at = (datetime.utcnow() + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
+            # 写入/更新本次ACCEPT卖家缓存
+            if preferred_seller_ids:
+                set_seller_pointer_a_mode(user_id, 0, preferred_seller_ids, expires_at)
             # 批量创建订单
             created_orders = []
             total_cost = 0
 
             for i in range(order_count):
                 try:
-                    # 每个订单使用相同的图片但不同的备注
-                    order_remark = remark
-
-                    # 指定preferred_seller分流
-                    seller_id = ''
-                    if preferred_seller_ids:
-                        # 轮流分配给响应的卖家
-                        seller_id = preferred_seller_ids[i % len(preferred_seller_ids)]
-
+                    # 轮流分配
+                    result = get_next_seller_a_mode(user_id)
+                    if not result:
+                        return jsonify({"success": False, "error": "A模式在线卖家缓存已过期，请重新检查在线卖家"}), 400
+                    next_id, seller_ids, idx = result
+                    seller_id = next_id
                     # 使用原子操作创建订单
                     success, message, new_balance, credit_limit = create_order_with_deduction_atomic(
-                        file_path, "", package, order_remark, username, user_id, preferred_seller=seller_id
+                        file_path, "", package, remark, username, user_id, preferred_seller=seller_id
                     )
-
                     if not success:
-                        # 如果创建失败，返回错误信息
                         logger.warning(f"A模式第{i+1}个订单创建失败: {message}")
                         return jsonify({
                             "success": False,
@@ -483,31 +453,28 @@ def register_routes(app, notification_queue):
                             "balance": new_balance,
                             "credit_limit": credit_limit
                         }), 400
-
                     # 获取新创建的订单ID
                     new_order = execute_query(
-                        "SELECT id FROM orders WHERE web_user_id = ? ORDER BY id DESC LIMIT 1", 
+                        "SELECT id FROM orders WHERE web_user_id = ? ORDER BY id DESC LIMIT 1",
                         (username,), fetch=True
                     )
                     if new_order:
                         order_id = new_order[0][0]
                         created_orders.append(order_id)
-
                         from modules.database import mark_order_notified
                         mark_order_notified(order_id)
-
                         notification_queue.put({
                             'type': 'new_order',
                             'order_id': order_id,
                             'account': file_path,
                             'password': '',
                             'package': package,
-                            'preferred_seller': seller_id if seller_id else None,  # 只分配给点ACCEPT的卖家
-                            'remark': order_remark
+                            'preferred_seller': seller_id,
+                            'remark': remark
                         })
-
+                        # 更新分流指针
+                        set_seller_pointer_a_mode(user_id, idx + 1, seller_ids, expires_at)
                         logger.info(f"A模式订单 #{order_id} 创建成功并加入通知队列，分配给: {seller_id}")
-
                 except Exception as e:
                     logger.error(f"创建第{i+1}个订单时出错: {str(e)}")
                     return jsonify({

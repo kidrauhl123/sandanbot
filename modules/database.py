@@ -115,7 +115,7 @@ def init_db():
     logger.info(f"初始化数据库，使用连接: {DATABASE_URL[:10] if DATABASE_URL else 'SQLite'}...")
 
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
-        init_postgres_db()
+    init_postgres_db()
         # 确保创建用户定制价格表
         try:
             execute_query("""
@@ -152,6 +152,11 @@ def init_db():
     logger.info("正在创建用户定制价格表...")
     create_user_custom_prices_table()
     logger.info("用户定制价格表创建完成")
+
+    # 创建卖家轮询表
+    logger.info("正在创建卖家轮询表...")
+    create_seller_round_robin_table()
+    logger.info("卖家轮询表创建完成")
 
 
 
@@ -1745,8 +1750,8 @@ def get_user_custom_prices(user_id):
             logger.warning(f"用户定制价格表不存在，返回空字典: {str(e)}")
             return {}
         else:
-            logger.error(f"获取用户定制价格失败: {str(e)}", exc_info=True)
-            return {}
+        logger.error(f"获取用户定制价格失败: {str(e)}", exc_info=True)
+        return {}
 
 def set_user_custom_price(user_id, package, price, admin_id):
     """
@@ -1869,3 +1874,137 @@ def check_seller_activity(telegram_id):
         (timestamp, telegram_id)
     )
     return True 
+
+def create_seller_round_robin_table():
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        cur = conn.cursor()
+        if is_postgres():
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS seller_round_robin (
+                    mode VARCHAR(8) NOT NULL, -- 'A'或'B'
+                    user_id VARCHAR(64),      -- A模式时为web用户id，B模式为NULL
+                    seller_ids TEXT NOT NULL, -- 逗号分隔的卖家ID
+                    pointer INTEGER NOT NULL DEFAULT 0,
+                    expires_at TIMESTAMP,     -- A模式有效期
+                    PRIMARY KEY (mode, user_id)
+                );
+            ''')
+        else:
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS seller_round_robin (
+                    mode TEXT NOT NULL,
+                    user_id TEXT,
+                    seller_ids TEXT NOT NULL,
+                    pointer INTEGER NOT NULL DEFAULT 0,
+                    expires_at TEXT,
+                    PRIMARY KEY (mode, user_id)
+                );
+            ''')
+        conn.commit()
+    finally:
+        conn.close() 
+
+# B模式：获取下一个分流卖家ID
+
+def get_next_seller_b_mode():
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        cur = conn.cursor()
+        # 获取所有分流中卖家ID，按telegram_id升序
+        if is_postgres():
+            cur.execute("SELECT telegram_id FROM sellers WHERE distribution=1 ORDER BY telegram_id ASC")
+        else:
+            cur.execute("SELECT telegram_id FROM sellers WHERE distribution=1 ORDER BY telegram_id ASC")
+        seller_ids = [str(row[0]) for row in cur.fetchall()]
+        if not seller_ids:
+            return None
+        # 查询指针
+        cur.execute("SELECT pointer FROM seller_round_robin WHERE mode='B' AND user_id IS NULL")
+        row = cur.fetchone()
+        pointer = row[0] if row else 0
+        # 取下一个卖家
+        idx = pointer % len(seller_ids)
+        next_id = seller_ids[idx]
+        return next_id, seller_ids, idx
+    finally:
+        conn.close()
+
+# B模式：设置指针
+
+def set_seller_pointer_b_mode(new_pointer, seller_ids):
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        cur = conn.cursor()
+        ids_str = ','.join(seller_ids)
+        if is_postgres():
+            cur.execute("""
+                INSERT INTO seller_round_robin (mode, user_id, seller_ids, pointer)
+                VALUES ('B', NULL, %s, %s)
+                ON CONFLICT (mode, user_id) DO UPDATE SET seller_ids=EXCLUDED.seller_ids, pointer=EXCLUDED.pointer
+            """, (ids_str, new_pointer))
+        else:
+            cur.execute("""
+                INSERT OR REPLACE INTO seller_round_robin (mode, user_id, seller_ids, pointer)
+                VALUES ('B', NULL, ?, ?)
+            """, (ids_str, new_pointer))
+        conn.commit()
+    finally:
+        conn.close()
+
+# A模式：获取下一个分流卖家ID
+
+def get_next_seller_a_mode(user_id):
+    conn = get_db_connection()
+    if not conn:
+        return None
+    try:
+        cur = conn.cursor()
+        # 查询缓存
+        cur.execute("SELECT seller_ids, pointer, expires_at FROM seller_round_robin WHERE mode='A' AND user_id=%s" if is_postgres() else "SELECT seller_ids, pointer, expires_at FROM seller_round_robin WHERE mode='A' AND user_id=?", (user_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        seller_ids, pointer, expires_at = row
+        import datetime
+        now = datetime.datetime.utcnow()
+        if expires_at and str(expires_at) < str(now):
+            return None
+        seller_ids = seller_ids.split(',')
+        if not seller_ids:
+            return None
+        idx = pointer % len(seller_ids)
+        next_id = seller_ids[idx]
+        return next_id, seller_ids, idx
+    finally:
+        conn.close()
+
+# A模式：设置指针
+
+def set_seller_pointer_a_mode(user_id, new_pointer, seller_ids, expires_at):
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        cur = conn.cursor()
+        ids_str = ','.join(seller_ids)
+        if is_postgres():
+            cur.execute("""
+                INSERT INTO seller_round_robin (mode, user_id, seller_ids, pointer, expires_at)
+                VALUES ('A', %s, %s, %s, %s)
+                ON CONFLICT (mode, user_id) DO UPDATE SET seller_ids=EXCLUDED.seller_ids, pointer=EXCLUDED.pointer, expires_at=EXCLUDED.expires_at
+            """, (user_id, ids_str, new_pointer, expires_at))
+        else:
+            cur.execute("""
+                INSERT OR REPLACE INTO seller_round_robin (mode, user_id, seller_ids, pointer, expires_at)
+                VALUES ('A', ?, ?, ?, ?)
+            """, (user_id, ids_str, new_pointer, expires_at))
+        conn.commit()
+    finally:
+        conn.close() 
