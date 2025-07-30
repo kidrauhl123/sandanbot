@@ -1051,12 +1051,10 @@ async def on_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"接单时出错: {str(e)}", exc_info=True)
             await query.answer("接单失败，请稍后重试", show_alert=True)
     # 注释掉A模式相关回调处理
-    """
-    elif data.startswith("availability_accept_"):
-        # 处理卖家可用性确认
-        username = data.replace("availability_accept_", "")
-        await handle_availability_accept(query, user_id, username)
-    """
+    # elif data.startswith("availability_accept_"):
+    #     # 处理卖家可用性确认
+    #     username = data.replace("availability_accept_", "")
+    #     await handle_availability_accept(query, user_id, username)
     elif data.startswith("feedback:"):
         # 内联实现反馈按钮逻辑，替代 on_feedback_button 函数
         try:
