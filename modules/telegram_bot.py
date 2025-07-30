@@ -713,7 +713,7 @@ async def send_notification_from_queue(data):
             # 发送消息给卖家（如果指定了特定卖家，则只发给他们）
             logger.info(f"[通知流程] preferred_seller: {preferred_seller}, type: {type(preferred_seller)}")
             logger.info(f"[通知流程] active_sellers: {active_sellers}")
-            if preferred_seller:
+            try:
                 target_sellers = [seller for seller in active_sellers if str(seller.get('id', seller.get('telegram_id'))) == str(preferred_seller)]
                 logger.info(f"[通知流程] target_sellers after preferred_seller filter: {target_sellers}")
                 if not target_sellers:
@@ -721,11 +721,10 @@ async def send_notification_from_queue(data):
                     # 如果没有指定卖家，推送给所有活跃卖家
                     target_sellers = active_sellers
                     logger.info(f"[通知流程] target_sellers fallback to all active: {target_sellers}")
+            except Exception as e:
+                logger.error(f"[通知流程] target_sellers筛选异常: {e}", exc_info=True)
             else:
-                # 没有指定preferred_seller，推送给所有活跃卖家
-                target_sellers = active_sellers
-                logger.info(f"[通知流程] target_sellers (no preferred): {target_sellers}")
-            logger.info(f"[通知流程] for循环前，target_sellers: {target_sellers}")
+                logger.info(f"[通知流程] for循环前，target_sellers: {target_sellers}")
                 
             # 为订单添加状态标记
             await mark_order_as_processing(order_id)
