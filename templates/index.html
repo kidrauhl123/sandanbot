@@ -1080,7 +1080,10 @@
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/utc.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/timezone.js"></script>
-  <script>dayjs.extend(window.dayjs_plugin_utc);dayjs.extend(window.dayjs_plugin_timezone);</script>
+  <script>
+    dayjs.extend(window.dayjs_plugin_utc);
+    dayjs.extend(window.dayjs_plugin_timezone);
+  </script>
 </head>
 <body>
 <div class="navbar">
@@ -1139,7 +1142,25 @@
                 <div class="card-header">
                   <h2>充值下单</h2>
                 </div>
-                
+                <!-- 模式选择 - 选项卡样式 -->
+                <div class="mode-tabs" style="display: none;">
+                  <div class="tab-header">
+                    <button type="button" class="tab-btn" id="tabModeA" data-mode="A" title="先检查卖家在线状态，再批量下单" style="display: none;">
+                      <i class="fas fa-search"></i>
+                      <span>分步下单</span>
+                    </button>
+                    <button type="button" class="tab-btn active" id="tabModeB" data-mode="B" title="直接提交订单，系统自动分配">
+                      <i class="fas fa-bolt"></i>
+                      <span>快速下单</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- A模式步骤容器 -->
+                <div id="modeAContainer" style="display: none;">
+                  <!-- A模式内容已隐藏 -->
+                </div>
+
                 <!-- B模式容器 -->
                 <div id="modeBContainer">
                 <form id="orderForm" autocomplete="off" enctype="multipart/form-data">
@@ -1292,18 +1313,20 @@
   // 时间格式化函数 - 显示中国时间（修正未来一天问题）
   function formatDateTime(dateString) {
     if (!dateString) return '未知';
-    // 使用dayjs库并强制+8时区
+    // 使用dayjs库并设置为亚洲/上海时区
     if (window.dayjs) {
-      return window.dayjs(dateString).add(8, 'hour').format('YYYY-MM-DD HH:mm:ss');
+      return window.dayjs(dateString).tz("Asia/Shanghai").format('YYYY-MM-DD HH:mm:ss');
     }
     // 兜底方案
     const date = new Date(dateString);
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    const h = String(date.getHours()).padStart(2, '0');
-    const min = String(date.getMinutes()).padStart(2, '0');
-    const s = String(date.getSeconds()).padStart(2, '0');
+    // 转换为中国时区
+    const chinaTime = new Date(date.getTime() + (8 * 60 * 60 * 1000));
+    const y = chinaTime.getUTCFullYear();
+    const m = String(chinaTime.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(chinaTime.getUTCDate()).padStart(2, '0');
+    const h = String(chinaTime.getUTCHours()).padStart(2, '0');
+    const min = String(chinaTime.getUTCMinutes()).padStart(2, '0');
+    const s = String(chinaTime.getUTCSeconds()).padStart(2, '0');
     return `${y}-${m}-${d} ${h}:${min}:${s}`;
   }
 
@@ -1352,365 +1375,17 @@
         if (remarkCell) {
           remarkCell.textContent = newRemark;
         }
-        showAlert('备注更新成功', 'success');
+        showCustomAlert('备注更新成功', 'success');
         // 刷新订单列表
         loadOrders();
       } else {
         const result = await response.json();
-        showAlert(result.error || '更新失败', 'error');
+        showCustomAlert(result.error || '更新失败', 'error');
       }
     } catch (error) {
       console.error('更新备注失败:', error);
-      showAlert('网络错误，请重试', 'error');
+      showCustomAlert('网络错误，请重试', 'error');
     }
-  }
-
-  // 模式切换功能
-  function initModeSelector() {
-    const tabModeA = document.getElementById('tabModeA');
-    const tabModeB = document.getElementById('tabModeB');
-    const modeAContainer = document.getElementById('modeAContainer');
-    const modeBContainer = document.getElementById('modeBContainer');
-    
-    let currentMode = 'A'; // 默认A模式
-    
-    function switchMode(mode) {
-      // 更新tab按钮状态
-      document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-      });
-      
-      if (mode === 'A') {
-        tabModeA.classList.add('active');
-        modeAContainer.style.display = 'block';
-        modeBContainer.style.display = 'none';
-        currentMode = 'A';
-        // 每次切换到A模式都重新初始化A模式功能，确保事件绑定
-        initModeA();
-      } else {
-        tabModeB.classList.add('active');
-        modeAContainer.style.display = 'none';
-        modeBContainer.style.display = 'block';
-        currentMode = 'B';
-      }
-    }
-    
-    // 绑定选项卡点击事件
-    tabModeA.addEventListener('click', () => switchMode('A'));
-    tabModeB.addEventListener('click', () => switchMode('B'));
-    
-    // 初始化A模式功能
-    initModeA();
-    
-    // 初始状态
-    switchMode('A');
-  }
-  
-  // A模式功能初始化
-  function initModeA() {
-    // 检查在线卖家按钮
-    document.getElementById('checkSellersBtn').addEventListener('click', async function() {
-      const button = this;
-      const originalText = button.textContent;
-      
-      button.disabled = true;
-      button.textContent = '检查中...';
-      
-      try {
-        await checkActiveSellers();
-      } catch (error) {
-        console.error('检查卖家失败:', error);
-        showAlert('检查卖家失败，请重试', 'error');
-      } finally {
-        button.disabled = false;
-        button.textContent = originalText;
-      }
-    });
-    
-    // 下一步按钮
-    document.getElementById('nextStepBtn').addEventListener('click', function() {
-      showStep2();
-    });
-    
-    // 返回上一步按钮
-    document.getElementById('backStepBtn').addEventListener('click', function() {
-      showStep1();
-    });
-    
-    // 提交订单按钮
-    if (window._submitOrdersBtnHandler) {
-      document.getElementById('submitOrdersBtn').removeEventListener('click', window._submitOrdersBtnHandler);
-    }
-    window._submitOrdersBtnHandler = function(e) {
-      e.preventDefault();
-      console.log('分步下单提交按钮被点击');
-      submitModeAOrders();
-    };
-    document.getElementById('submitOrdersBtn').addEventListener('click', window._submitOrdersBtnHandler);
-    
-    // 初始化A模式的图片上传
-    initImageUploadA();
-  }
-  
-  // 检查活跃卖家
-  async function checkActiveSellers() {
-    try {
-      const username = '{{ session.username }}';
-      const response = await fetch('/api/check-active-sellers', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ username: username })
-      });
-      
-      if (!response.ok) {
-        throw new Error('请求失败');
-      }
-      
-      const result = await response.json();
-      if (result.success) {
-        // 显示活跃卖家区域
-        document.getElementById('activeSellers').style.display = 'block';
-        
-        // 启动轮询检查卖家响应
-        pollSellerResponses();
-      } else {
-        throw new Error(result.error || '检查失败');
-      }
-    } catch (error) {
-      throw error;
-    }
-  }
-  
-  // 轮询检查卖家响应
-  function pollSellerResponses() {
-    const username = '{{ session.username }}';
-    let pollCount = 0;
-    const maxPolls = 15; // 30秒，每2秒一次
-    
-    const pollInterval = setInterval(async () => {
-      pollCount++;
-      
-      try {
-        const response = await fetch(`/api/get-seller-responses?username=${username}`);
-        if (response.ok) {
-          const data = await response.json();
-          updateSellersList(data.activeSellers);
-          
-          // 如果有卖家响应，启用下一步按钮
-          if (data.activeSellers.length > 0) {
-            const nextBtn = document.getElementById('nextStepBtn');
-            nextBtn.disabled = false;
-            nextBtn.className = 'btn btn-primary';
-            clearInterval(pollInterval);
-            return;
-          }
-        }
-      } catch (error) {
-        console.error('轮询卖家响应失败:', error);
-      }
-      
-      // 30秒后停止轮询
-      if (pollCount >= maxPolls) {
-        clearInterval(pollInterval);
-        // 显示超时提示
-        updateSellersList([]);
-        const sellersList = document.querySelector('.sellers-list');
-        sellersList.innerHTML = '<div style="text-align: center; color: #ef4444;">检查超时，暂无卖家响应。请稍后重试。</div>';
-      }
-    }, 2000); // 每2秒检查一次
-  }
-  
-  // 更新卖家列表显示
-  function updateSellersList(sellers) {
-    const sellersList = document.querySelector('.sellers-list');
-    sellersList.innerHTML = '';
-    
-    activeSellersData = sellers;
-    
-    if (sellers.length === 0) {
-      sellersList.innerHTML = '<div style="text-align: center; color: #6b7280;">等待卖家响应...</div>';
-      return;
-    }
-    
-    sellers.forEach(seller => {
-      const sellerItem = document.createElement('div');
-      sellerItem.className = 'seller-item';
-      sellerItem.innerHTML = `
-        <span class="seller-name">${seller.nickname || '未设置昵称'}</span>
-        <span class="seller-status">当前活跃，将处理您的订单</span>
-      `;
-      sellersList.appendChild(sellerItem);
-    });
-  }
-  
-  // 显示步骤2
-  function showStep2() {
-    document.getElementById('stepOrderCount').style.display = 'none';
-    document.getElementById('stepImageUpload').style.display = 'block';
-    // 保持活跃卖家区域显示
-    document.getElementById('activeSellers').style.display = 'block';
-  }
-  
-  // 显示步骤1
-  function showStep1() {
-    document.getElementById('stepOrderCount').style.display = 'block';
-    document.getElementById('stepImageUpload').style.display = 'none';
-  }
-  
-  // 初始化A模式的图片上传
-  function initImageUploadA() {
-    const dropAreaA = document.getElementById('dropAreaA');
-    const fileInputA = document.getElementById('qr_code_input_a');
-    const manualUploadBtnA = document.getElementById('manualUploadBtnA');
-    const imagePreviewA = document.getElementById('imagePreviewA');
-    
-    // 复制原有的图片上传逻辑
-    dropAreaA.addEventListener('click', async function() {
-      try {
-        const clipboardItems = await navigator.clipboard.read();
-        for (const clipboardItem of clipboardItems) {
-          for (const type of clipboardItem.types) {
-            if (type.startsWith('image/')) {
-              const blob = await clipboardItem.getType(type);
-              const file = new File([blob], 'clipboard-image.png', { type: blob.type });
-              
-              const dt = new DataTransfer();
-              dt.items.add(file);
-              fileInputA.files = dt.files;
-              
-              previewImageA(file);
-              return;
-            }
-          }
-        }
-        showAlert('剪切板中没有找到图片', 'warning');
-      } catch (error) {
-        console.error('读取剪切板失败:', error);
-        showAlert('无法访问剪切板，请使用手动上传', 'warning');
-      }
-    });
-    
-    manualUploadBtnA.addEventListener('click', function() {
-      fileInputA.click();
-    });
-    
-    fileInputA.addEventListener('change', function() {
-      if (this.files.length > 0) {
-        previewImageA(this.files[0]);
-      }
-    });
-  }
-  
-  // 预览图片A
-  function previewImageA(file) {
-    const previewA = document.getElementById('imagePreviewA');
-    previewA.innerHTML = '';
-    
-    if (file && file.type.startsWith('image/')) {
-      const img = document.createElement('img');
-      img.onload = function() {
-        URL.revokeObjectURL(this.src);
-      };
-      img.src = URL.createObjectURL(file);
-      img.style.maxWidth = '100%';
-      img.style.maxHeight = '200px';
-      img.style.borderRadius = '8px';
-      previewA.appendChild(img);
-      previewA.style.display = 'block';
-    }
-  }
-  
-  // 提交A模式订单
-  async function submitModeAOrders() {
-    const orderCount = parseInt(document.getElementById('orderCount').value);
-    const fileInput = document.getElementById('qr_code_input_a');
-    const remark = document.getElementById('remarkA').value;
-    
-    if (!fileInput.files.length) {
-      showAlert('请上传二维码图片', 'error');
-      return;
-    }
-    
-    // 获取所有点ACCEPT的卖家telegram_id
-    const preferredSellerIds = activeSellersData.map(s => s.telegram_id).join(',');
-    if (!preferredSellerIds) {
-      showAlert('没有卖家响应ACCEPT，无法提交订单！', 'error');
-      return;
-    }
-    
-    const button = document.getElementById('submitOrdersBtn');
-    const originalText = button.textContent;
-    
-    // 防重复提交检查
-    if (button.disabled || window._isSubmittingAOrder) {
-      showAlert('订单正在提交中，请勿重复点击', 'warning');
-      return;
-    }
-    window._isSubmittingAOrder = true;
-    button.disabled = true;
-    button.textContent = '提交中...';
-    // 禁用所有相关按钮
-    document.getElementById('manualUploadBtnA').disabled = true;
-    document.getElementById('backStepBtn').disabled = true;
-    try {
-      // 创建FormData
-      const formData = new FormData();
-      formData.append('mode', 'A');
-      formData.append('order_count', orderCount);
-      formData.append('qr_code_a', fileInput.files[0]);
-      formData.append('remark_a', remark);
-      formData.append('package', '12');
-      formData.append('preferred_seller', preferredSellerIds);
-      const response = await fetch('/', {
-        method: 'POST',
-        body: formData
-      });
-      const result = await response.json();
-      if (response.ok && result.success) {
-        showAlert(`成功提交${orderCount}个订单！`, 'success');
-        // 重置表单
-        resetModeA();
-        // 刷新订单列表
-        await loadOrders();
-        // 更新余额显示（如果返回了）
-        if (result.balance !== undefined) {
-          updateBalanceDisplay(result.balance, result.credit_limit);
-        }
-      } else {
-        throw new Error(result.error || '提交失败');
-      }
-    } catch (error) {
-      console.error('提交订单失败:', error);
-      showAlert(error.message || '提交订单失败', 'error');
-    } finally {
-      window._isSubmittingAOrder = false;
-      button.disabled = false;
-      button.textContent = originalText;
-      document.getElementById('manualUploadBtnA').disabled = false;
-      document.getElementById('backStepBtn').disabled = false;
-      // 清空文件input，彻底防止重复提交
-      fileInput.value = '';
-    }
-  }
-  
-  // 重置A模式
-  function resetModeA() {
-    document.getElementById('orderCount').value = '1';
-    document.getElementById('remarkA').value = '';
-    document.getElementById('qr_code_input_a').value = '';
-    document.getElementById('imagePreviewA').style.display = 'none';
-    document.getElementById('imagePreviewA').innerHTML = '';
-    document.getElementById('activeSellers').style.display = 'none';
-    document.getElementById('nextStepBtn').disabled = true;
-    document.getElementById('nextStepBtn').className = 'btn btn-secondary';
-    
-    // 回到步骤1
-    showStep1();
-    
-    activeSellersData = [];
-    selectedSellers.clear();
   }
 
   // 加载用户定制价格
@@ -1954,7 +1629,7 @@
       }
     }
     
-          // 预览文件
+    // 预览文件
     function previewFile(file) {
       if (!file.type.match('image.*')) {
         alert('请选择图片文件！');
@@ -2056,9 +1731,6 @@
 
   // 页面加载处理
   document.addEventListener('DOMContentLoaded', function() {
-    // 初始化模式选择器
-    initModeSelector();
-    
     // 初始化图片上传功能
     initImageUpload();
     
@@ -2103,7 +1775,7 @@
       displayedOrders = 5;
       renderOrders(allOrders);
     });
-
+    
     // 套餐选择处理
     const packageSelect = document.getElementById('packageSelect');
     const selectedPrice = document.getElementById('selectedPrice');
@@ -2157,12 +1829,15 @@
         }
       });
     }, 1000);
-
+    
     // 点击余额badge 显示/隐藏信息栏
-    document.getElementById('balanceBadge').addEventListener('click', () => {
-      const bar = document.getElementById('balanceInfoBar');
-      bar.style.display = bar.style.display === 'none' ? 'block' : 'none';
-    });
+    const balanceBadge = document.getElementById('balanceBadge');
+    if (balanceBadge) {
+      balanceBadge.addEventListener('click', () => {
+        const bar = document.getElementById('balanceInfoBar');
+        bar.style.display = bar.style.display === 'none' ? 'block' : 'none';
+      });
+    }
   });
   
   // 显示自定义提示框
