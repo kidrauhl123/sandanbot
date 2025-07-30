@@ -735,9 +735,17 @@ async def send_notification_from_queue(data):
                 try:
                     logger.info(f"准备发送图片给卖家 {seller_id}: {image_path}")
                     print(f"DEBUG: 准备发送图片给卖家 {seller_id}: {image_path}")
+                    
+                    # 添加caption和reply_markup的定义
+                    caption = f"*{remark}*" if remark else f"新订单 #{order_id}"
+                    keyboard = [
+                        [InlineKeyboardButton("✅ Complete", callback_data=f"done_{order_id}"),
+                         InlineKeyboardButton("❓ Any Problem", callback_data=f"fail_{order_id}")]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
                     import asyncio
                     try:
-                        caption = f"*{remark}*" if remark else f"新订单 #{order_id}"
                         await asyncio.wait_for(
                             bot_application.bot.send_photo(
                                 chat_id=seller_id,
