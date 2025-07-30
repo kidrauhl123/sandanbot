@@ -1139,71 +1139,7 @@
                 <div class="card-header">
                   <h2>充值下单</h2>
                 </div>
-                <!-- 模式选择 - 选项卡样式 -->
-                <div class="mode-tabs">
-                  <div class="tab-header">
-                    <button type="button" class="tab-btn" id="tabModeA" data-mode="A" title="先检查卖家在线状态，再批量下单">
-                      <i class="fas fa-search"></i>
-                      <span>分步下单</span>
-                    </button>
-                    <button type="button" class="tab-btn active" id="tabModeB" data-mode="B" title="直接提交订单，系统自动分配">
-                      <i class="fas fa-bolt"></i>
-                      <span>快速下单</span>
-                    </button>
-                  </div>
-                </div>
-
-                <!-- A模式步骤容器 -->
-                <div id="modeAContainer" style="display: none;">
-                  <!-- 步骤1：订单数量 -->
-                  <div id="stepOrderCount" class="step-container">
-                    <div class="form-group">
-                      <label>我想发送订单数量</label>
-                      <input type="number" id="orderCount" class="form-control" value="1" min="1" max="10">
-                      <small class="form-text text-muted">一次最多可发送10个订单</small>
-                    </div>
-                    <div class="form-group">
-                      <button type="button" id="checkSellersBtn" class="btn btn-primary">检查在线卖家</button>
-                    </div>
-                    <div id="activeSellers" class="active-sellers" style="display:none;">
-                      <div class="sellers-list"></div>
-                    </div>
-                    <div class="form-group">
-                      <button type="button" id="nextStepBtn" class="btn btn-secondary" disabled>下一步</button>
-                    </div>
-                  </div>
-
-                  <!-- 步骤2：图片上传 -->
-                  <div id="stepImageUpload" class="step-container" style="display: none;">
-                    <div class="form-group">
-                      <label>油管二维码图片</label>
-                      <div class="upload-container" id="dropAreaA">
-                        <input name="qr_code_a" id="qr_code_input_a" type="file" class="form-control file-input" accept="image/*" capture="environment" style="display: none;">
-                        <div class="upload-placeholder">
-                          <i class="fas fa-clipboard"></i>
-                          <span>点击此处粘贴剪切板图片 (Ctrl+V)</span>
-                          <span class="small">或拖拽图片到此处</span>
-                        </div>
-                        <div class="image-preview" id="imagePreviewA"></div>
-                      </div>
-                      <div style="margin-top: 10px;">
-                        <button type="button" id="manualUploadBtnA" class="btn btn-secondary" style="background: #6c757d; color: white; padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px;">
-                          📁 手动选择文件
-                        </button>
-                      </div>
-                      <small class="form-text text-muted">请上传您YouTube账号的二维码截图</small>
-                    </div>
-                    <div class="form-group">
-                      <label>备注 (可选)</label>
-                      <input name="remark_a" id="remarkA" class="form-control" placeholder="如有特殊要求请备注">
-                    </div>
-                    <div class="form-group">
-                      <button type="button" id="submitOrdersBtn" class="btn btn-success">提交订单</button>
-                      <button type="button" id="backStepBtn" class="btn btn-secondary" style="margin-left: 10px;">返回上一步</button>
-                    </div>
-                  </div>
-                </div>
-
+                
                 <!-- B模式容器 -->
                 <div id="modeBContainer">
                 <form id="orderForm" autocomplete="off" enctype="multipart/form-data">
@@ -1390,10 +1326,6 @@
   
   // 用户实际价格（会被API获取的价格覆盖）
   let USER_PRICES = {...WEB_PRICES};
-  
-  // A模式相关变量
-  var activeSellersData = [];
-  let selectedSellers = new Set();
   
   // 编辑备注功能
   function editRemark(orderId, currentRemark) {
