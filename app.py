@@ -180,23 +180,30 @@ def view_image(filepath):
 def telegram_webhook():
     """处理来自Telegram的webhook请求"""
     try:
-        # 获取更新数据
-        update_data = request.get_json()
-        logger.info(f"收到Telegram webhook更新: {update_data}")
-        print(f"DEBUG: 收到Telegram webhook更新: {update_data}")
-        
+        logger.info("收到Telegram webhook请求")
+        print("DEBUG: 收到Telegram webhook请求")
+        # 获取原始请求体，便于调试
+        raw_data = request.data
+        logger.info(f"Webhook原始请求体: {raw_data}")
+        try:
+            update_data = request.get_json(force=True, silent=False)
+        except Exception as json_err:
+            logger.error(f"解析JSON失败: {str(json_err)}")
+            return jsonify({"status": "error", "message": f"JSON解析失败: {str(json_err)}"}), 400
+        logger.info(f"Webhook解析后数据: {update_data}")
+        print(f"DEBUG: Webhook解析后数据: {update_data}")
         # 在单独的线程中处理更新，避免阻塞Flask响应
         threading.Thread(
             target=process_telegram_update,
             args=(update_data, notification_queue),
             daemon=True
         ).start()
-        
         # 立即返回响应，避免Telegram超时
         return jsonify({"status": "success"}), 200
     except Exception as e:
         logger.error(f"处理Telegram webhook时出错: {str(e)}", exc_info=True)
         print(f"ERROR: 处理Telegram webhook时出错: {str(e)}")
+        import traceback
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
