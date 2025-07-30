@@ -1437,9 +1437,11 @@ def register_routes(app, notification_queue):
                 )
                 if seller_info:
                     active_sellers.append({
-                        "telegram_id": telegram_id,
+                        "telegram_id": telegram_id,  # 确保这里的telegram_id是字符串
                         "nickname": seller_info[0][0] or "未设置昵称"
                     })
+            
+            logger.info(f"返回的活跃卖家数据: {active_sellers}")
             
             return jsonify({
                 "success": True,
