@@ -1050,12 +1050,13 @@ async def on_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"接单时出错: {str(e)}", exc_info=True)
             await query.answer("接单失败，请稍后重试", show_alert=True)
+    # 注释掉A模式相关回调处理
+    """
     elif data.startswith("availability_accept_"):
-        # 处理可用性检查的ACCEPT响应
-        username = data.replace('availability_accept_', '')
-        logger.info(f"收到可用性ACCEPT回调: user_id={user_id}, username={username}, data={data}")
+        # 处理卖家可用性确认
+        username = data.replace("availability_accept_", "")
         await handle_availability_accept(query, user_id, username)
-        
+    """
     elif data.startswith("feedback:"):
         # 内联实现反馈按钮逻辑，替代 on_feedback_button 函数
         try:
@@ -1461,8 +1462,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['welcomed'] = True
 
 # A模式相关功能
+"""
 async def send_availability_check(telegram_id, username):
-    """发送可用性检查通知给指定卖家"""
+    # 发送可用性检查通知给指定卖家
     try:
         # 创建ACCEPT按钮
         keyboard = [
@@ -1491,7 +1493,7 @@ async def send_availability_check(telegram_id, username):
         logger.error(f"发送可用性检查通知失败: {str(e)}", exc_info=True)
 
 async def handle_availability_accept(query, telegram_id, username):
-    """处理卖家的可用性确认响应"""
+    # 处理卖家的可用性确认响应
     try:
         logger.info(f"处理卖家 {telegram_id} 对用户 {username} 的可用性确认")
         
@@ -1509,22 +1511,11 @@ async def handle_availability_accept(query, telegram_id, username):
         except Exception as storage_error:
             logger.error(f"存储卖家响应失败: {str(storage_error)}")
         
-        # 首先回应查询，避免TG端卡住
-        await query.answer("Confirmed!", show_alert=False)
-        
         # 删除原消息
         try:
-            await query.message.delete()
-            logger.info(f"成功删除卖家 {telegram_id} 的可用性检查消息")
+            await query.delete_message()
         except Exception as e:
             logger.warning(f"删除消息失败: {str(e)}")
-            # 尝试编辑消息而不是删除
-            try:
-                await query.edit_message_text("You are now marked as online. Please wait for new orders.")
-                logger.info(f"无法删除消息，已编辑消息内容")
-            except Exception as edit_error:
-                logger.warning(f"编辑消息也失败: {str(edit_error)}")
-        
         # 发送新提示
         if bot_application and bot_application.bot:
             await bot_application.bot.send_message(
@@ -1535,7 +1526,10 @@ async def handle_availability_accept(query, telegram_id, username):
             logger.info(f"已向卖家 {telegram_id} 发送上线提示")
         else:
             logger.error("机器人未初始化，无法发送上线提示")
+        # 一定要调用answer避免TG端卡住
+        await query.answer("Confirmed!", show_alert=False)
         
     except Exception as e:
         logger.error(f"处理可用性确认失败: {str(e)}", exc_info=True)
         await query.answer("Error occurred, please try again", show_alert=True)
+"""

@@ -158,13 +158,16 @@ def register_routes(app, notification_queue):
         # 检查下单模式
         mode = request.form.get('mode', 'B')
         
+        # 注释掉A模式分支，只保留B模式
+        """
         if mode == 'A':
             # A模式：批量下单
             return handle_mode_a_orders()
         else:
-            # B模式：原有逻辑
-            return handle_mode_b_order()
-    
+        """
+        # B模式：原有逻辑
+        return handle_mode_b_order()
+
     def handle_mode_b_order():
         """处理B模式订单（原有逻辑）"""
         logger.info("处理B模式图片上传请求")
@@ -359,141 +362,6 @@ def register_routes(app, notification_queue):
         except Exception as e:
             logger.error(f"创建订单时出错: {str(e)}", exc_info=True)
             return jsonify({"success": False, "error": f"创建订单时出错: {str(e)}"}), 500
-
-    def handle_mode_a_orders():
-        """处理A模式批量订单"""
-        logger.info("处理A模式批量订单请求")
-        
-        try:
-            # 获取订单数量
-            order_count = int(request.form.get('order_count', 1))
-            if order_count < 1 or order_count > 10:
-                return jsonify({"success": False, "error": "订单数量必须在1-10之间"}), 400
-            
-            # 处理图片上传（与B模式相同）
-            qr_code = None
-            if 'qr_code' in request.files and request.files['qr_code'].filename != '':
-                qr_code = request.files['qr_code']
-            elif 'qr_code_a' in request.files and request.files['qr_code_a'].filename != '':
-                qr_code = request.files['qr_code_a']
-            else:
-                return jsonify({"success": False, "error": "请上传二维码图片"}), 400
-            
-            # 保存图片（使用与B模式相同的逻辑）
-            import uuid, os
-            from datetime import datetime
-            import imghdr
-            
-            # 检查是否是有效的图片文件
-            temp_path = os.path.join('static', 'temp_upload_a.png')
-            qr_code.save(temp_path)
-            
-            img_type = imghdr.what(temp_path)
-            if not img_type:
-                os.remove(temp_path)
-                return jsonify({"success": False, "error": "请上传有效的图片文件"}), 400
-            
-            # 生成唯一文件名
-            file_ext = f".{img_type}" if img_type else ".png"
-            unique_filename = f"{uuid.uuid4().hex}{file_ext}"
-            timestamp = datetime.now().strftime("%Y%m%d")
-            save_path = os.path.join('static', 'uploads', timestamp)
-            
-            if not os.path.exists(save_path):
-                os.makedirs(save_path, exist_ok=True)
-                os.chmod(save_path, 0o755)
-            
-            file_path = os.path.join(save_path, unique_filename)
-            
-            import shutil
-            shutil.copy2(temp_path, file_path)
-            os.chmod(file_path, 0o644)
-            os.remove(temp_path)  # 清理临时文件
-            
-            if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-                return jsonify({"success": False, "error": "图片保存失败"}), 500
-            
-            logger.info(f"A模式图片保存成功: {file_path}")
-            
-            # 获取其他参数
-            package = '12'  # A模式固定为12个月
-            remark = request.form.get('remark_a', '')
-            user_id = session.get('user_id')
-            username = session.get('username')
-            
-            # 获取所有点ACCEPT的卖家
-            preferred_seller = request.form.get('preferred_seller', '').strip()
-            preferred_seller_ids = [s for s in preferred_seller.split(',') if s]
-            # 10分钟有效期
-            expires_at = (datetime.utcnow() + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
-            # 写入/更新本次ACCEPT卖家缓存
-            if preferred_seller_ids:
-                set_seller_pointer_a_mode(user_id, 0, preferred_seller_ids, expires_at)
-            # 批量创建订单
-            created_orders = []
-            total_cost = 0
-
-            for i in range(order_count):
-                try:
-                    # 轮流分配
-                    result = get_next_seller_a_mode(user_id)
-                    if not result:
-                        return jsonify({"success": False, "error": "A模式在线卖家缓存已过期，请重新检查在线卖家"}), 400
-                    next_id, seller_ids, idx = result
-                    seller_id = next_id
-                    # 使用原子操作创建订单
-                    success, message, new_balance, credit_limit = create_order_with_deduction_atomic(
-                        file_path, "", package, remark, username, user_id
-                    )
-                    if not success:
-                        logger.warning(f"A模式第{i+1}个订单创建失败: {message}")
-                        return jsonify({
-                            "success": False,
-                            "error": f"第{i+1}个订单创建失败: {message}",
-                            "balance": new_balance,
-                            "credit_limit": credit_limit
-                        }), 400
-                    # 获取新创建的订单ID
-                    new_order = execute_query(
-                        "SELECT id FROM orders WHERE web_user_id = ? ORDER BY id DESC LIMIT 1",
-                        (username,), fetch=True
-                    )
-                    if new_order:
-                        order_id = new_order[0][0]
-                        created_orders.append(order_id)
-                        from modules.database import mark_order_notified
-                        mark_order_notified(order_id)
-                        notification_queue.put({
-                            'type': 'new_order',
-                            'order_id': order_id,
-                            'account': file_path,
-                            'password': '',
-                            'package': package,
-                            'preferred_seller': seller_id,
-                            'remark': remark
-                        })
-                        # 更新分流指针
-                        set_seller_pointer_a_mode(user_id, idx + 1, seller_ids, expires_at)
-                        logger.info(f"A模式订单 #{order_id} 创建成功并加入通知队列，分配给: {seller_id}")
-                except Exception as e:
-                    logger.error(f"创建第{i+1}个订单时出错: {str(e)}")
-                    return jsonify({
-                        "success": False,
-                        "error": f"创建第{i+1}个订单时出错: {str(e)}"
-                    }), 500
-            
-            logger.info(f"A模式批量订单创建完成: 用户={username}, 创建了{len(created_orders)}个订单")
-            
-            return jsonify({
-                "success": True,
-                "message": f"成功创建{len(created_orders)}个订单！",
-                "created_orders": created_orders,
-                "order_count": len(created_orders)
-            })
-            
-        except Exception as e:
-            logger.error(f"A模式批量下单出错: {str(e)}", exc_info=True)
-            return jsonify({"success": False, "error": f"批量下单出错: {str(e)}"}), 500
 
     @app.route('/orders/stats/web/<user_id>')
     @login_required
@@ -1432,25 +1300,25 @@ def register_routes(app, notification_queue):
             active_sellers = []
             for telegram_id in responses.keys():
                 seller_info = execute_query(
-                    "SELECT nickname FROM sellers WHERE telegram_id = %s", 
+                    "SELECT nickname, username, first_name FROM sellers WHERE telegram_id = ?",
                     (telegram_id,), fetch=True
                 )
                 if seller_info:
+                    nickname, username, first_name = seller_info[0]
+                    display_name = nickname or first_name or username or f"卖家 {telegram_id}"
                     active_sellers.append({
-                        "telegram_id": telegram_id,  # 确保这里的telegram_id是字符串
-                        "nickname": seller_info[0][0] or "未设置昵称"
+                        "id": telegram_id,
+                        "name": display_name
                     })
-            
-            logger.info(f"返回的活跃卖家数据: {active_sellers}")
             
             return jsonify({
                 "success": True,
-                "activeSellers": active_sellers
+                "sellers": active_sellers
             })
             
         except Exception as e:
             logger.error(f"获取卖家响应失败: {str(e)}", exc_info=True)
-            return jsonify({"error": "获取响应失败"}), 500
+            return jsonify({"error": "获取失败，请重试"}), 500
 
 
 
