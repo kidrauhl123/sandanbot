@@ -727,31 +727,32 @@ async def send_notification_from_queue(data):
             for seller in target_sellers:
                 seller_id = seller.get('id', seller.get('telegram_id'))
                 try:
-                    # 使用备注作为标题，不再显示订单ID
-                    caption = f"*{remark}*" if remark else f"新订单 #{order_id}"
-                    
-                    # 创建按钮
-                    keyboard = [
-                        [InlineKeyboardButton("✅ Complete", callback_data=f"done_{order_id}"),
-                         InlineKeyboardButton("❓ Any Problem", callback_data=f"fail_{order_id}")]
-                    ]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-                    
-                    # 发送图片和备注
-                    await bot_application.bot.send_photo(
-                        chat_id=seller_id,
-                        photo=open(image_path, 'rb'),
-                        caption=caption,
-                        parse_mode='Markdown',
-                        reply_markup=reply_markup
-                    )
-                    logger.info(f"已发送订单 #{order_id} 通知到卖家 {seller_id}")
-                    
-                    # 自动接单（标记该订单已被该卖家接受）
-                    await auto_accept_order(order_id, seller_id)
-                    
+                    logger.info(f"准备发送图片给卖家 {seller_id}: {image_path}")
+                    print(f"DEBUG: 准备发送图片给卖家 {seller_id}: {image_path}")
+                    import asyncio
+                    try:
+                        await asyncio.wait_for(
+                            bot_application.bot.send_photo(
+                                chat_id=seller_id,
+                                photo=open(image_path, 'rb'),
+                                caption=caption,
+                                parse_mode='Markdown',
+                                reply_markup=reply_markup
+                            ),
+                            timeout=10
+                        )
+                        logger.info(f"已发送图片给卖家 {seller_id}")
+                        print(f"DEBUG: 已发送图片给卖家 {seller_id}")
+                        await auto_accept_order(order_id, seller_id)
+                    except asyncio.TimeoutError:
+                        logger.error(f"发送图片给卖家 {seller_id} 超时")
+                        print(f"ERROR: 发送图片给卖家 {seller_id} 超时")
+                    except Exception as e:
+                        logger.error(f"向卖家 {seller_id} 发送订单通知时出错: {str(e)}", exc_info=True)
+                        print(f"ERROR: 向卖家 {seller_id} 发送订单通知时出错: {str(e)}")
                 except Exception as e:
-                    logger.error(f"向卖家 {seller_id} 发送订单通知时出错: {str(e)}", exc_info=True)
+                    logger.error(f"处理卖家 {seller_id} 通知流程时出错: {str(e)}", exc_info=True)
+                    print(f"ERROR: 处理卖家 {seller_id} 通知流程时出错: {str(e)}")
             
             # 成功发送通知后，标记订单为已通知
             from modules.database import mark_order_notified

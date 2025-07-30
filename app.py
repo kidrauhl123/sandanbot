@@ -11,6 +11,7 @@ import traceback
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash, send_file
 import sqlite3
 import shutil
+import asyncio
 
 # 根据环境变量确定是否为生产环境
 is_production = os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PRODUCTION')
