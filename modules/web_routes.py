@@ -35,8 +35,10 @@ CN_TIMEZONE = pytz.timezone('Asia/Shanghai')
 # 获取中国时间的函数
 def get_china_time():
     """获取当前中国时间（UTC+8）"""
-    utc_now = datetime.now(pytz.utc)
-    china_now = utc_now.astimezone(CN_TIMEZONE)
+    # 强制使用中国时区，不受系统时区影响
+    now = datetime.now()
+    china_tz = pytz.timezone('Asia/Shanghai')
+    china_now = china_tz.localize(now.replace(tzinfo=None))
     return china_now.strftime("%Y-%m-%d %H:%M:%S")
 
 # ===== 登录装饰器 =====
@@ -155,17 +157,7 @@ def register_routes(app, notification_queue):
     @app.route('/', methods=['POST'])
     @login_required
     def create_order():
-        # 检查下单模式
-        mode = request.form.get('mode', 'B')
-        
-        # 注释掉A模式分支，只保留B模式
-        """
-        if mode == 'A':
-            # A模式：批量下单
-            return handle_mode_a_orders()
-        else:
-        """
-        # B模式：原有逻辑
+        # B模式：快速下单
         return handle_mode_b_order()
 
     def handle_mode_b_order():
@@ -1200,127 +1192,6 @@ def register_routes(app, notification_queue):
         except Exception as e:
             logger.error(f"切换卖家分流状态失败: {str(e)}", exc_info=True)
             return jsonify({"error": "操作失败，请重试"}), 500
-
-    # A模式相关API
-    @app.route('/api/check-active-sellers', methods=['POST'])
-    @login_required
-    def check_active_sellers():
-        """检查活跃卖家并发送TG通知"""
-        try:
-            data = request.get_json()
-            username = data.get('username')
-            
-            if not username:
-                return jsonify({"error": "缺少用户名"}), 400
-            
-            # 获取活跃的卖家
-            if DATABASE_URL.startswith('postgres'):
-                active_sellers = execute_query(
-                    "SELECT telegram_id, nickname FROM sellers WHERE is_active = TRUE", 
-                    fetch=True
-                )
-            else:
-                active_sellers = execute_query(
-                    "SELECT telegram_id, nickname FROM sellers WHERE is_active = 1", 
-                    fetch=True
-                )
-            # 去重，确保每个卖家只发一次通知
-            unique_sellers = {}
-            for telegram_id, nickname in active_sellers:
-                unique_sellers[str(telegram_id)] = nickname
-            active_sellers = [(tid, unique_sellers[tid]) for tid in unique_sellers]
-            
-            if not active_sellers:
-                return jsonify({"error": "当前没有活跃的卖家"}), 400
-            
-            # 清空之前的响应记录
-            from modules.telegram_bot import global_seller_responses
-            global_seller_responses[username] = {}
-            logger.info(f"已清空用户 {username} 的历史响应记录")
-            
-            # 发送TG通知给所有活跃卖家
-            from modules.telegram_bot import send_availability_check
-            import threading
-            
-            def send_notifications():
-                """在单独线程中发送通知"""
-                import asyncio
-                
-                async def send_all_notifications():
-                    tasks = []
-                    for seller in active_sellers:
-                        telegram_id, nickname = seller
-                        task = send_availability_check(telegram_id, username)
-                        tasks.append(task)
-                    
-                    if tasks:
-                        await asyncio.gather(*tasks, return_exceptions=True)
-                
-                # 在新的事件循环中运行
-                try:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(send_all_notifications())
-                except Exception as e:
-                    logger.error(f"发送通知失败: {str(e)}")
-                finally:
-                    loop.close()
-            
-            # 在后台线程中发送通知
-            notification_thread = threading.Thread(target=send_notifications, daemon=True)
-            notification_thread.start()
-            
-            logger.info(f"用户 {username} 发起卖家在线检查，通知了 {len(active_sellers)} 个卖家")
-            
-            return jsonify({
-                "success": True,
-                "message": f"已向 {len(active_sellers)} 个活跃卖家发送通知"
-            })
-            
-        except Exception as e:
-            logger.error(f"检查活跃卖家失败: {str(e)}", exc_info=True)
-            return jsonify({"error": "检查失败，请重试"}), 500
-
-    @app.route('/api/get-seller-responses', methods=['GET'])
-    @login_required
-    def get_seller_responses():
-        """获取卖家响应状态"""
-        try:
-            username = request.args.get('username') or session.get('username')
-            
-            if not username:
-                return jsonify({"error": "缺少用户名"}), 400
-            
-            # 从全局存储中获取响应
-            from modules.telegram_bot import global_seller_responses
-            responses = global_seller_responses.get(username, {})
-            logger.info(f"获取用户 {username} 的卖家响应: {responses}")
-            
-            # 获取响应的卖家信息
-            active_sellers = []
-            for telegram_id in responses.keys():
-                seller_info = execute_query(
-                    "SELECT nickname, username, first_name FROM sellers WHERE telegram_id = ?",
-                    (telegram_id,), fetch=True
-                )
-                if seller_info:
-                    nickname, username, first_name = seller_info[0]
-                    display_name = nickname or first_name or username or f"卖家 {telegram_id}"
-                    active_sellers.append({
-                        "id": telegram_id,
-                        "name": display_name
-                    })
-            
-            return jsonify({
-                "success": True,
-                "sellers": active_sellers
-            })
-            
-        except Exception as e:
-            logger.error(f"获取卖家响应失败: {str(e)}", exc_info=True)
-            return jsonify({"error": "获取失败，请重试"}), 500
-
-
 
     @app.route('/admin/api/sellers/toggle_admin', methods=['POST'])
     @login_required

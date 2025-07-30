@@ -127,8 +127,10 @@ def callback_error_handler(func):
 # 获取中国时间的函数
 def get_china_time():
     """获取当前中国时间（UTC+8）"""
-    utc_now = datetime.now(pytz.utc)
-    china_now = utc_now.astimezone(CN_TIMEZONE)
+    # 强制使用中国时区，不受系统时区影响
+    now = datetime.now()
+    china_tz = pytz.timezone('Asia/Shanghai')
+    china_now = china_tz.localize(now.replace(tzinfo=None))
     return china_now.strftime("%Y-%m-%d %H:%M:%S")
 
 # ===== 全局变量 =====
@@ -1458,76 +1460,3 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "/test - 测试机器人状态"
             )
             context.user_data['welcomed'] = True
-
-# A模式相关功能
-"""
-async def send_availability_check(telegram_id, username):
-    # 发送可用性检查通知给指定卖家
-    try:
-        # 创建ACCEPT按钮
-        keyboard = [
-            [InlineKeyboardButton("✅ ACCEPT", callback_data=f"availability_accept_{username}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        message = (
-            f"🔔 *Online Check* 🔔\n\n"
-            f"User *{username}* is checking seller availability.\n\n"
-            f"Click ACCEPT if you're online and ready to take orders."
-        )
-        
-        if bot_application and bot_application.bot:
-            await bot_application.bot.send_message(
-                chat_id=telegram_id,
-                text=message,
-                parse_mode='Markdown',
-                reply_markup=reply_markup
-            )
-            logger.info(f"已向卖家 {telegram_id} 发送可用性检查通知")
-        else:
-            logger.error("机器人未初始化，无法发送可用性检查通知")
-            
-    except Exception as e:
-        logger.error(f"发送可用性检查通知失败: {str(e)}", exc_info=True)
-
-async def handle_availability_accept(query, telegram_id, username):
-    # 处理卖家的可用性确认响应
-    try:
-        logger.info(f"处理卖家 {telegram_id} 对用户 {username} 的可用性确认")
-        
-        # 使用全局变量记录响应
-        try:
-            global global_seller_responses
-            
-            if username not in global_seller_responses:
-                global_seller_responses[username] = {}
-            
-            global_seller_responses[username][str(telegram_id)] = True
-            logger.info(f"记录卖家响应: {telegram_id} -> {username}")
-            logger.info(f"当前全局响应: {global_seller_responses}")
-                
-        except Exception as storage_error:
-            logger.error(f"存储卖家响应失败: {str(storage_error)}")
-        
-        # 删除原消息
-        try:
-            await query.delete_message()
-        except Exception as e:
-            logger.warning(f"删除消息失败: {str(e)}")
-        # 发送新提示
-        if bot_application and bot_application.bot:
-            await bot_application.bot.send_message(
-                chat_id=telegram_id,
-                text="You are now marked as online. Please wait for new orders.",
-                parse_mode='Markdown'
-            )
-            logger.info(f"已向卖家 {telegram_id} 发送上线提示")
-        else:
-            logger.error("机器人未初始化，无法发送上线提示")
-        # 一定要调用answer避免TG端卡住
-        await query.answer("Confirmed!", show_alert=False)
-        
-    except Exception as e:
-        logger.error(f"处理可用性确认失败: {str(e)}", exc_info=True)
-        await query.answer("Error occurred, please try again", show_alert=True)
-"""
