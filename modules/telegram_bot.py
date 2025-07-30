@@ -727,7 +727,7 @@ async def send_notification_from_queue(data):
                 logger.error(f"[通知流程] target_sellers筛选异常: {e}", exc_info=True)
             else:
                 logger.info(f"[通知流程] for循环前，target_sellers: {target_sellers}")
-                
+            
             # 为订单添加状态标记
             await mark_order_as_processing(order_id)
             
@@ -737,8 +737,7 @@ async def send_notification_from_queue(data):
                 try:
                     logger.info(f"准备发送图片给卖家 {seller_id}: {image_path}")
                     print(f"DEBUG: 准备发送图片给卖家 {seller_id}: {image_path}")
-                    
-                    # 添加caption和reply_markup的定义
+                    # Adding caption and reply_markup definitions here
                     caption = f"*{remark}*" if remark else f"新订单 #{order_id}"
                     keyboard = [
                         [InlineKeyboardButton("✅ Complete", callback_data=f"done_{order_id}"),
@@ -756,7 +755,7 @@ async def send_notification_from_queue(data):
                                 parse_mode='Markdown',
                                 reply_markup=reply_markup
                             ),
-                            timeout=10
+                            timeout=10  # 10秒超时
                         )
                         logger.info(f"已发送图片给卖家 {seller_id}")
                         print(f"DEBUG: 已发送图片给卖家 {seller_id}")
@@ -775,10 +774,67 @@ async def send_notification_from_queue(data):
             from modules.database import mark_order_notified
             if mark_order_notified(order_id):
                 logger.info(f"订单 #{order_id} 已标记为已通知，避免重复发送")
+        
+        elif data.get('type') == 'activity_check':
+            # 处理卖家活跃度检查通知
+            seller_id = data.get('seller_id')
+            logger.info(f"[活跃度检查] 开始处理卖家 {seller_id} 的活跃度检查")
+            print(f"DEBUG: [活跃度检查] 开始处理卖家 {seller_id} 的活跃度检查")
+            
+            if not seller_id:
+                logger.error("活跃度检查失败：未提供卖家ID")
+                return
+                
+            try:
+                # 创建活跃度检查消息
+                message = (
+                    "🔔 *在线检查* 🔔\n\n"
+                    "系统正在检查您是否在线。\n"
+                    "如果您收到此消息，说明您的账号连接正常。\n\n"
+                    "当前时间: " + get_china_time()
+                )
+                
+                # 发送消息
+                if bot_application and bot_application.bot:
+                    await bot_application.bot.send_message(
+                        chat_id=seller_id,
+                        text=message,
+                        parse_mode='Markdown'
+                    )
+                    logger.info(f"已发送活跃度检查消息给卖家 {seller_id}")
+                    print(f"DEBUG: 已发送活跃度检查消息给卖家 {seller_id}")
                     
+                    # 更新卖家最后活跃时间
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    timestamp = get_china_time()
+                    
+                    if DATABASE_URL.startswith('postgres'):
+                        cursor.execute(
+                            "UPDATE sellers SET last_active_at = %s WHERE telegram_id = %s",
+                            (timestamp, seller_id)
+                        )
+                    else:
+                        cursor.execute(
+                            "UPDATE sellers SET last_active_at = ? WHERE telegram_id = ?",
+                            (timestamp, seller_id)
+                        )
+                    conn.commit()
+                    conn.close()
+                    logger.info(f"已更新卖家 {seller_id} 的最后活跃时间为 {timestamp}")
+                else:
+                    logger.error("机器人未初始化，无法发送活跃度检查消息")
+            except Exception as e:
+                logger.error(f"发送活跃度检查消息给卖家 {seller_id} 失败: {str(e)}", exc_info=True)
+                print(f"ERROR: 发送活跃度检查消息给卖家 {seller_id} 失败: {str(e)}")
+        
+        else:
+            logger.warning(f"未知的通知类型: {data.get('type')}")
+            print(f"WARNING: 未知的通知类型: {data.get('type')}")
+            
     except Exception as e:
-        logger.error(f"处理通知数据失败: {str(e)}", exc_info=True)
-        print(f"ERROR: 处理通知数据失败: {str(e)}")
+        logger.error(f"处理通知时出错: {str(e)}", exc_info=True)
+        print(f"ERROR: 处理通知时出错: {str(e)}")
 
 async def mark_order_as_processing(order_id):
     """标记订单为处理中状态"""
