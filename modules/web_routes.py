@@ -443,7 +443,7 @@ def register_routes(app, notification_queue):
                     seller_id = next_id
                     # 使用原子操作创建订单
                     success, message, new_balance, credit_limit = create_order_with_deduction_atomic(
-                        file_path, "", package, remark, username, user_id, preferred_seller=seller_id
+                        file_path, "", package, remark, username, user_id
                     )
                     if not success:
                         logger.warning(f"A模式第{i+1}个订单创建失败: {message}")
