@@ -22,7 +22,8 @@ from modules.database import (
     get_admin_activation_codes, get_user_custom_prices, set_user_custom_price, delete_user_custom_price,
     get_active_sellers, update_seller_nickname, check_seller_activity,
     get_next_seller_b_mode, set_seller_pointer_b_mode,
-    get_next_seller_a_mode, set_seller_pointer_a_mode
+    get_next_seller_a_mode, set_seller_pointer_a_mode,
+    get_db_connection, is_postgres
 )
 import modules.constants as constants
 
@@ -259,16 +260,29 @@ def register_routes(app, notification_queue):
         # 获取指定的接单人（B模式自动分流）
         from modules.database import get_next_seller_b_mode, set_seller_pointer_b_mode
         preferred_seller = request.form.get('preferred_seller', '')
-        if not preferred_seller:
+        
+        # 记录前端是否指定了接单人
+        if preferred_seller:
+            logger.info(f"前端指定了接单人: {preferred_seller}")
+        else:
+            logger.info("未指定接单人，将使用自动分流")
+        
+        # 强制使用自动分流，即使前端指定了接单人也忽略
+        force_auto_distribution = True  # 设置为False可以恢复允许指定接单人的功能
+        
+        # 如果强制自动分流或未指定接单人
+        if force_auto_distribution or not preferred_seller:
             # 自动分流，获取下一个分流中卖家
             result = get_next_seller_b_mode()
             if not result:
                 logger.warning("没有可用的分流卖家")
                 return jsonify({"success": False, "error": "没有可用的分流卖家"}), 400
             next_id, seller_ids, idx = result
+            if force_auto_distribution and preferred_seller:
+                logger.info(f"忽略前端指定的接单人({preferred_seller})，使用自动分流")
             preferred_seller = next_id
         
-        logger.info(f"收到订单提交请求: 二维码={file_path}, 套餐={package}, 指定接单人={preferred_seller or '无'}")
+        logger.info(f"收到订单提交请求: 二维码={file_path}, 套餐={package}, 指定接单人={preferred_seller}")
         
         if not account:
             logger.warning("订单提交失败: 二维码保存失败")
@@ -295,7 +309,7 @@ def register_routes(app, notification_queue):
             logger.info(f"订单提交成功: 用户={username}, 套餐={package}, 新余额={new_balance}")
             
             # 获取最新订单列表并格式化
-            orders_raw = execute_query("SELECT id, account, password, package, status, created_at FROM orders ORDER BY id DESC LIMIT 5", fetch=True)
+            orders_raw = execute_query("SELECT id, account, password, package, status, created_at, user_id FROM orders ORDER BY id DESC LIMIT 5", fetch=True)
             orders = []
             
             # 获取新创建的订单ID
@@ -335,9 +349,16 @@ def register_routes(app, notification_queue):
                     'preferred_seller': preferred_seller,
                     'remark': remark
                 })
-                # 更新分流指针
-                if not request.form.get('preferred_seller', ''):
-                    set_seller_pointer_b_mode(idx + 1, seller_ids)
+                
+                # 更新分流指针 - 只有在成功创建订单后才更新
+                # 无论是否指定接单人，都更新指针，确保下一个订单分给不同卖家
+                if force_auto_distribution or not request.form.get('preferred_seller', ''):
+                    update_success = set_seller_pointer_b_mode(idx + 1, seller_ids)
+                    if update_success:
+                        logger.info(f"分流指针成功更新到: {idx + 1}")
+                    else:
+                        logger.warning("分流指针更新失败")
+                
                 logger.info(f"已将订单 #{new_order_id} 加入通知队列")
                 print(f"DEBUG: 已将订单 #{new_order_id} 加入通知队列")
             else:
@@ -1164,29 +1185,40 @@ def register_routes(app, notification_queue):
     def admin_api_toggle_seller_distribution(telegram_id):
         """切换卖家的分流状态"""
         try:
-            # 获取当前状态
+            # 获取当前状态 - 注意这里要查询distribution而非is_active
             current_status = execute_query(
-                "SELECT is_active FROM sellers WHERE telegram_id = %s", 
+                "SELECT distribution FROM sellers WHERE telegram_id = %s", 
                 (str(telegram_id),), fetch=True
             )
             
             if not current_status:
                 return jsonify({"error": "卖家不存在"}), 404
             
-            # 切换状态
+            # 切换分流状态
             new_status = not current_status[0][0]
             execute_query(
-                "UPDATE sellers SET is_active = %s WHERE telegram_id = %s", 
+                "UPDATE sellers SET distribution = %s WHERE telegram_id = %s", 
                 (new_status, str(telegram_id))
             )
             
+            # 添加日志
             status_text = "加入分流" if new_status else "暂停分流"
-            logger.info(f"管理员 {session.get('username')} 将卖家 {telegram_id} 设为 {status_text}")
+            logger.info(f"管理员 {session.get('username')} 将卖家 {telegram_id} {status_text}")
+            
+            # 修改成功后检查当前参与分流的卖家情况
+            if is_postgres():
+                active_sellers = execute_query("SELECT COUNT(*) FROM sellers WHERE distribution=TRUE AND is_active=TRUE", fetch=True)
+            else:
+                active_sellers = execute_query("SELECT COUNT(*) FROM sellers WHERE distribution=1 AND is_active=1", fetch=True)
+            
+            count = active_sellers[0][0] if active_sellers else 0
+            logger.info(f"当前共有 {count} 个卖家参与分流")
             
             return jsonify({
                 "success": True, 
                 "message": f"已{status_text}",
-                "new_status": new_status
+                "new_status": new_status,
+                "active_distribution_sellers": count
             })
             
         except Exception as e:
@@ -2227,3 +2259,120 @@ def register_routes(app, notification_queue):
         except Exception as e:
             logger.error(f"确认订单 {oid} 收货时发生错误: {e}", exc_info=True)
             return jsonify({"error": "服务器错误，请稍后重试"}), 500
+
+    @app.route('/admin/api/distribution-status', methods=['GET', 'POST'])
+    @login_required
+    @admin_required
+    def admin_api_distribution_status():
+        """查看和重置订单分流状态"""
+        from modules.database import get_db_connection, is_postgres
+        
+        if request.method == 'GET':
+            # 获取分流信息
+            conn = get_db_connection()
+            try:
+                cur = conn.cursor()
+                
+                # 获取参与分流的卖家
+                if is_postgres():
+                    cur.execute("SELECT telegram_id, username, first_name, nickname FROM sellers WHERE distribution=TRUE AND is_active=TRUE ORDER BY telegram_id")
+                else:
+                    cur.execute("SELECT telegram_id, username, first_name, nickname FROM sellers WHERE distribution=1 AND is_active=1 ORDER BY telegram_id")
+                
+                sellers = []
+                for row in cur.fetchall():
+                    telegram_id, username, first_name, nickname = row
+                    display_name = nickname or first_name or username or telegram_id
+                    sellers.append({
+                        "id": telegram_id,
+                        "display_name": display_name
+                    })
+                
+                # 获取当前分流指针
+                cur.execute("SELECT pointer, seller_ids, mode FROM seller_round_robin WHERE mode='B' AND user_id IS NULL")
+                pointer_row = cur.fetchone()
+                
+                if pointer_row:
+                    pointer = pointer_row[0]
+                    seller_ids_str = pointer_row[1]
+                    mode = pointer_row[2]
+                    seller_ids = seller_ids_str.split(',') if seller_ids_str else []
+                    
+                    # 计算下一个要分流的卖家
+                    next_idx = pointer % len(sellers) if sellers else 0
+                    next_seller = sellers[next_idx]["id"] if 0 <= next_idx < len(sellers) else None
+                else:
+                    pointer = 0
+                    seller_ids = []
+                    mode = 'B'
+                    next_seller = sellers[0]["id"] if sellers else None
+                
+                return jsonify({
+                    "success": True,
+                    "sellers": sellers,
+                    "total_sellers": len(sellers),
+                    "pointer": pointer,
+                    "next_seller_id": next_seller,
+                    "next_seller_idx": pointer % len(sellers) if sellers else 0,
+                    "mode": mode
+                })
+            except Exception as e:
+                logger.error(f"获取分流状态失败: {str(e)}", exc_info=True)
+                return jsonify({"error": f"获取分流状态失败: {str(e)}"}), 500
+            finally:
+                conn.close()
+        
+        elif request.method == 'POST':
+            # 重置分流指针
+            data = request.get_json()
+            new_pointer = data.get('pointer', 0)
+            
+            try:
+                conn = get_db_connection()
+                cur = conn.cursor()
+                
+                # 获取所有分流中卖家ID
+                if is_postgres():
+                    cur.execute("SELECT telegram_id FROM sellers WHERE distribution=TRUE AND is_active=TRUE ORDER BY telegram_id")
+                else:
+                    cur.execute("SELECT telegram_id FROM sellers WHERE distribution=1 AND is_active=1 ORDER BY telegram_id")
+                
+                seller_ids = [str(row[0]) for row in cur.fetchall()]
+                
+                if not seller_ids:
+                    return jsonify({"error": "没有可用的分流卖家"}), 400
+                
+                # 更新指针
+                seller_ids_str = ','.join(seller_ids)
+                if is_postgres():
+                    cur.execute("""
+                        INSERT INTO seller_round_robin (mode, user_id, seller_ids, pointer)
+                        VALUES ('B', NULL, %s, %s)
+                        ON CONFLICT (mode, user_id) DO UPDATE SET seller_ids=EXCLUDED.seller_ids, pointer=EXCLUDED.pointer
+                    """, (seller_ids_str, new_pointer))
+                else:
+                    cur.execute("""
+                        INSERT OR REPLACE INTO seller_round_robin (mode, user_id, seller_ids, pointer)
+                        VALUES ('B', NULL, ?, ?)
+                    """, (seller_ids_str, new_pointer))
+                
+                conn.commit()
+                
+                # 记录日志
+                logger.info(f"管理员 {session.get('username')} 重置分流指针为 {new_pointer}")
+                
+                return jsonify({
+                    "success": True,
+                    "message": f"分流指针已重置为 {new_pointer}",
+                    "new_pointer": new_pointer
+                })
+            except Exception as e:
+                logger.error(f"重置分流指针失败: {str(e)}", exc_info=True)
+                return jsonify({"error": f"重置分流指针失败: {str(e)}"}), 500
+            finally:
+                conn.close()
+
+def set_seller_pointer_b_mode(new_pointer, seller_ids):
+    # 添加日志记录当前指针值和卖家列表
+    logger.info(f"更新B模式分流指针: 新指针={new_pointer}, 卖家IDs={seller_ids}")
+    # 原有代码...

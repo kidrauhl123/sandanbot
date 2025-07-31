@@ -1968,44 +1968,88 @@ def get_next_seller_b_mode():
         cur = conn.cursor()
         # 获取所有分流中卖家ID，按telegram_id升序
         if is_postgres():
-            cur.execute("SELECT telegram_id FROM sellers WHERE distribution=TRUE ORDER BY telegram_id ASC")
+            cur.execute("SELECT telegram_id FROM sellers WHERE distribution=TRUE AND is_active=TRUE ORDER BY telegram_id ASC")
         else:
-            cur.execute("SELECT telegram_id FROM sellers WHERE distribution=1 ORDER BY telegram_id ASC")
+            cur.execute("SELECT telegram_id FROM sellers WHERE distribution=1 AND is_active=1 ORDER BY telegram_id ASC")
         seller_ids = [str(row[0]) for row in cur.fetchall()]
+        
         if not seller_ids:
+            logger.warning("没有可用的分流卖家(distribution=TRUE AND is_active=TRUE)")
             return None
-        # 查询指针
-        cur.execute("SELECT pointer FROM seller_round_robin WHERE mode='B' AND user_id IS NULL")
+            
+        logger.info(f"找到 {len(seller_ids)} 个可用的分流卖家: {seller_ids}")
+        
+        # 查询指针 - 使用事务和锁确保一致性
+        if is_postgres():
+            cur.execute("BEGIN")
+            cur.execute("SELECT pointer FROM seller_round_robin WHERE mode='B' AND user_id IS NULL FOR UPDATE")
+        else:
+            cur.execute("BEGIN TRANSACTION")
+            cur.execute("SELECT pointer FROM seller_round_robin WHERE mode='B' AND user_id IS NULL")
+            
         row = cur.fetchone()
         pointer = row[0] if row else 0
+        logger.info(f"当前分流指针位置: {pointer}")
+        
         # 取下一个卖家
         idx = pointer % len(seller_ids)
         next_id = seller_ids[idx]
+        logger.info(f"选择的卖家索引: {idx}, ID: {next_id}")
+        
+        conn.commit()
         return next_id, seller_ids, idx
+    except Exception as e:
+        logger.error(f"获取分流卖家失败: {str(e)}", exc_info=True)
+        conn.rollback()
+        return None
     finally:
         conn.close()
 
 # B模式：设置指针
 
 def set_seller_pointer_b_mode(new_pointer, seller_ids):
+    logger.info(f"更新B模式分流指针: 新指针={new_pointer}, 卖家数量={len(seller_ids)}")
     conn = get_db_connection()
     if not conn:
-        return
+        return False
     try:
         cur = conn.cursor()
         ids_str = ','.join(seller_ids)
+        
         if is_postgres():
+            cur.execute("BEGIN")
+            # 先查询当前指针，确保更新是基于最新值
+            cur.execute("SELECT pointer FROM seller_round_robin WHERE mode='B' AND user_id IS NULL FOR UPDATE")
+            current = cur.fetchone()
+            current_pointer = current[0] if current else 0
+            logger.info(f"读取到当前指针: {current_pointer}, 将更新为: {new_pointer}")
+            
             cur.execute("""
                 INSERT INTO seller_round_robin (mode, user_id, seller_ids, pointer)
                 VALUES ('B', NULL, %s, %s)
                 ON CONFLICT (mode, user_id) DO UPDATE SET seller_ids=EXCLUDED.seller_ids, pointer=EXCLUDED.pointer
             """, (ids_str, new_pointer))
+            conn.commit()
+            logger.info(f"指针更新成功: {current_pointer} -> {new_pointer}")
         else:
+            cur.execute("BEGIN TRANSACTION")
+            # 先查询当前指针，确保更新是基于最新值
+            cur.execute("SELECT pointer FROM seller_round_robin WHERE mode='B' AND user_id IS NULL")
+            current = cur.fetchone()
+            current_pointer = current[0] if current else 0
+            logger.info(f"读取到当前指针: {current_pointer}, 将更新为: {new_pointer}")
+            
             cur.execute("""
                 INSERT OR REPLACE INTO seller_round_robin (mode, user_id, seller_ids, pointer)
                 VALUES ('B', NULL, ?, ?)
             """, (ids_str, new_pointer))
-        conn.commit()
+            conn.commit()
+            logger.info(f"指针更新成功: {current_pointer} -> {new_pointer}")
+        return True
+    except Exception as e:
+        logger.error(f"更新分流指针失败: {str(e)}", exc_info=True)
+        conn.rollback()
+        return False
     finally:
         conn.close()
 
