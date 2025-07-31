@@ -442,27 +442,24 @@
       color: #e74c3c;
     }
     
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    
     /* 刷新指示器样式 */
-    .refresh-indicator {
+    #refreshIndicator {
       position: fixed;
-      top: 15px;
-      right: 15px;
-      background-color: rgba(0, 0, 0, 0.7);
+      top: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.7);
       color: white;
       padding: 8px 15px;
       border-radius: 20px;
-      font-size: 12px;
+      font-size: 13px;
+      z-index: 1000;
       opacity: 0;
       transition: opacity 0.3s ease;
-      z-index: 9999;
+      pointer-events: none;
     }
     
-    .refresh-indicator.show {
+    #refreshIndicator.show {
       opacity: 1;
     }
     
@@ -1090,43 +1087,53 @@
 </head>
 <body>
 <div class="navbar">
-  <div class="navbar-brand">
-    <i class="fas fa-bolt" style="margin-right: 8px;"></i>
-    优图充值系统
-  </div>
-  <div class="navbar-menu">
-    <div class="dropdown">
-      <button class="dropdown-btn">
-        <span>{{ username }}</span>
-        <i class="fas fa-caret-down"></i>
-      </button>
-      <div class="dropdown-content">
-        <div class="dropdown-balance">
-          余额: <span id="dropdownBalance">{{ "%.2f"|format(balance) }}</span> 元
-          <br>
-          授信额度: <span id="dropdownCreditLimit">{{ "%.2f"|format(credit_limit) }}</span> 元
-        </div>
-        <a href="/dashboard"><i class="fas fa-tachometer-alt"></i> 个人中心</a>
-        <a href="/recharge"><i class="fas fa-coins"></i> 账户充值</a>
+  <div class="navbar-brand">优图充值系统</div>
+  <div class="navbar-user">
+    <div class="user-dropdown">
+      <div class="user-info">
+        <div class="user-avatar">{{ session.username[0]|upper }}</div>
+        <span class="user-name">{{ session.username }}</span>
         {% if session.is_admin %}
-        <a href="/admin"><i class="fas fa-cog"></i> 管理后台</a>
+          <span class="admin-badge">管理员</span>
         {% endif %}
-        <a href="/logout"><i class="fas fa-sign-out-alt"></i> 退出登录</a>
+      </div>
+      <div class="dropdown-menu">
+        <div class="dropdown-menu-header">账户信息</div>
+        {% if balance is defined %}
+        <div class="dropdown-menu-item">
+          <span>账户余额：</span>
+          <span class="{% if balance < 0 %}text-danger{% else %}text-success{% endif %}">
+            {{ balance }}{% if credit_limit is defined and credit_limit > 0 %} (额度：{{ credit_limit }}){% endif %}
+          </span>
+        </div>
+        {% endif %}
+        <div class="dropdown-divider"></div>
+        {% if session.is_admin %}
+          <a href="/admin" class="dropdown-menu-item">
+            <i class="fas fa-cog"></i>管理后台
+          </a>
+        {% else %}
+          <a href="/dashboard" class="dropdown-menu-item">
+            <i class="fas fa-user"></i>我的后台
+          </a>
+        {% endif %}
+        <a href="/logout" class="dropdown-menu-item danger">
+          <i class="fas fa-sign-out-alt"></i>退出登录
+        </a>
       </div>
     </div>
-  </div>
-</div>
-
-<!-- 加载中遮罩 -->
-<div id="loading-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.3); z-index: 9998; justify-content: center; align-items: center;">
-  <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
-    <i class="fas fa-spinner fa-spin" style="margin-right: 10px;"></i>
-    正在加载...
+    
+    {% if balance is defined %}
+    <div id="balanceBadge" class="balance-badge {% if balance < 0 %}negative{% endif %}" style="cursor:pointer;">
+      余额: ¥{{ balance }}
+      <a href="/recharge" class="recharge-btn">充值</a>
+    </div>
+    {% endif %}
   </div>
 </div>
 
 <!-- 刷新指示器 -->
-<div id="refreshIndicator" class="refresh-indicator">正在加载...</div>
+<div id="refreshIndicator">正在刷新...</div>
 
 <div class="main-container">
     <div class="container">
@@ -1322,9 +1329,9 @@
   let searchKeyword = ''; // 搜索关键词
   let autoRefreshInterval = null;
   let userId = '{{ session.user_id }}'; // 当前用户ID
-  let isAdmin = {% if session.is_admin %}true{% else %}false{% endif %}; // 是否是管理员
+  let isAdmin = {{ 'true' if session.is_admin else 'false' }}; // 是否是管理员
   let lastOrdersHash = ''; // 用于检测订单变化的哈希
-  let viewMode = 'grid'; // 默认视图模式：grid 或 table
+  let viewMode = 'table'; // 默认视图模式：grid 或 table
   let page = 1; // 当前页码
   let orderPageSize = 10; // 每次加载的订单数量
   
@@ -2072,162 +2079,121 @@
     }
   }
 
-  // 显示加载指示器
-  function showLoadingIndicator() {
-    try {
-      const loadingOverlay = document.getElementById('loading-overlay');
-      if (loadingOverlay) {
-        loadingOverlay.style.display = 'flex';
-      }
-      
-      // 同时确保刷新指示器也正确显示
-      const refreshIndicator = document.getElementById('refreshIndicator');
-      if (refreshIndicator) {
-        refreshIndicator.textContent = "正在加载...";
-        refreshIndicator.classList.add('show');
-      }
-    } catch (e) {
-      console.error('显示加载指示器出错', e);
-    }
-  }
-
-  // 隐藏加载指示器
-  function hideLoadingIndicator() {
-    try {
-      // 立即隐藏加载遮罩
-      const loadingOverlay = document.getElementById('loading-overlay');
-      if (loadingOverlay) {
-        loadingOverlay.style.display = 'none';
-      }
-      
-      // 延迟隐藏刷新指示器
-      setTimeout(() => {
-        const refreshIndicator = document.getElementById('refreshIndicator');
-        if (refreshIndicator) {
-          refreshIndicator.classList.remove('show');
-        }
-      }, 200);
-    } catch (e) {
-      console.error('隐藏加载指示器出错', e);
-    }
-  }
-
-  // 加载订单数据
+  // 加载订单
   async function loadOrders(isAutoRefresh = false) {
     try {
-      // 显示加载指示器
+      const indicator = document.getElementById('refreshIndicator');
       if (!isAutoRefresh) {
-        showLoadingIndicator();
+        indicator.textContent = "正在加载...";
+        indicator.classList.add('show');
       }
       
-      // 添加时间戳避免缓存，限制返回量
-      const timestamp = Date.now();
-      const response = await fetch(`/orders/recent?limit=50&t=${timestamp}`);
-      
-      if (!response.ok) {
-        throw new Error(`API响应错误: ${response.status}`);
-      }
-      
+      const response = await fetch('/orders/recent');
       const orders = await response.json();
       
-      // 检查API错误
-      if (orders && orders.error) {
-        throw new Error(orders.error);
+      // 生成并比较哈希，检测是否有变化
+      const newHash = generateOrdersHash(orders);
+      const hasChanged = newHash !== lastOrdersHash;
+      lastOrdersHash = newHash;
+      
+      // 如果是自动刷新且无变化，则不更新UI
+      if (isAutoRefresh && !hasChanged) {
+        return;
       }
       
       // 更新全局数据
-      allOrders = orders || [];
+      allOrders = orders;
       
       // 应用搜索过滤（如果有）
-      let filteredOrders = allOrders;
+      let filteredOrders = orders;
       if (searchKeyword) {
-        filteredOrders = allOrders.filter(order => 
+        filteredOrders = orders.filter(order => 
           order.id.toString().includes(searchKeyword) || 
-          (order.account && order.account.toLowerCase().includes(searchKeyword.toLowerCase()))
+          order.account.toLowerCase().includes(searchKeyword.toLowerCase())
         );
       }
       
-      // 直接渲染订单，不再使用延迟
+      // 渲染订单
       renderOrders(filteredOrders);
       
       // 更新今日总额
       updateTodayTotal(filteredOrders);
       
-      // 生成并比较哈希，检测是否有变化
-      const newHash = generateOrdersHash(allOrders);
-      lastOrdersHash = newHash;
-      
       // 显示自动刷新提示
       if (isAutoRefresh) {
-        const indicator = document.getElementById('refreshIndicator');
-        if (indicator) {
-          indicator.textContent = "数据已更新";
-          indicator.classList.add('show');
-          setTimeout(() => {
-            indicator.classList.remove('show');
-          }, 1500);
-        }
+        indicator.textContent = "数据已更新";
+        indicator.classList.add('show');
+        setTimeout(() => {
+          indicator.classList.remove('show');
+        }, 1500);
       }
     } catch (error) {
       console.error('加载订单失败:', error);
-      const errorMessage = error.message || '未知错误';
-      
-      // 显示错误通知
-      showNotification(`加载订单失败: ${errorMessage}`, 'error');
-      
-      // 显示空的订单列表
-      const container = document.getElementById('orders-container');
-      if (container) {
-        container.innerHTML = '<div class="no-results">加载订单失败，请刷新页面重试</div>';
-      }
     } finally {
-      // 确保无论如何都隐藏加载指示器
       hideLoadingIndicator();
     }
   }
 
-  // 渲染网格视图 - 优化版
-  function renderGridView(gridContainer, orders) {
-    // 如果没有订单，显示提示
+  // 渲染订单
+  function renderOrders(orders) {
+    const container = document.getElementById('orders-container');
+    if (!container) return;
+    
+    // 显示订单区域
     if (!orders.length) {
+      container.innerHTML = '<div class="no-results">暂无订单</div>';
+      document.getElementById('load-more-container').style.display = 'none';
+      return;
+    }
+    
+    // 根据当前显示的数量限制要显示的订单
+    const ordersToDisplay = orders.slice(0, displayedOrders);
+    
+    // 根据视图模式显示订单
+    if (viewMode === 'grid') {
+      renderGridView(container, ordersToDisplay);
+    } else {
+      renderTableView(container, ordersToDisplay);
+    }
+    
+    // 显示更多按钮
+    const loadMoreContainer = document.getElementById('load-more-container');
+    if (loadMoreContainer) {
+      // 只有当总订单数大于当前显示数时才显示"显示更多"按钮
+      loadMoreContainer.style.display = orders.length > displayedOrders ? 'block' : 'none';
+    }
+  }
+  
+  // 渲染网格视图
+  function renderGridView(gridContainer, orders) {
+    gridContainer.innerHTML = '';
+    
+    // 如果没有订单，显示提示
+    if (orders.length === 0) {
       gridContainer.innerHTML = '<div class="no-results">暂无订单</div>';
       return;
     }
     
-    // 使用DocumentFragment提高性能
-    const fragment = document.createDocumentFragment();
-    const template = document.createElement('template');
-    
     orders.forEach(o => {
-      const cls = 'status-' + (o.status || '').replace('已','').toLowerCase();
+      const cls = 'status-' + o.status.replace('已','').toLowerCase();
       
-      template.innerHTML = `
-        <div class="order-list-item" data-order-id="${o.id || ''}">
-          <h4>订单 #${o.id || ''} <span class="status-badge ${cls}">${o.status_text || ''}</span></h4>
+      const html = `
+        <div class="order-list-item" data-order-id="${o.id}">
+          <h4>订单 #${o.id} <span class="status-badge ${cls}">${o.status_text}</span></h4>
           ${isAdmin && o.accepted_by ? `<p class="creator">接单者：${escapeHtml(o.accepted_by)}</p>` : ''}
-          <p class="account"><strong>YouTube：</strong>${o.account && o.account.includes('uploads') ? `<a href="/${o.account}" target="_blank">查看二维码</a>` : '未上传二维码'}</p>
-          <p class="package"><strong>套餐：</strong>${o.package || ''}</p>
-          <p class="date"><strong>提交时间：</strong>${formatDateTime(o.created_at)}</p>
-          ${o.remark ? `<p class="remark"><strong>备注：</strong>${escapeHtml(o.remark)}</p>` : ''}
-          <div class="order-actions">
-            ${o.can_cancel ? `<button onclick="cancelOrder(${o.id})" class="action-button cancel-button"><i class="fas fa-times"></i> 取消订单</button>` : ''}
-            ${o.status === 'accepted' ? `<button onclick="urgeOrder(${o.id})" class="action-button urge-button"><i class="fas fa-bell"></i> 催单</button>` : ''}
-            ${o.status === 'completed' ? `<button onclick="disputeOrder(${o.id})" class="action-button dispute-button"><i class="fas fa-exclamation-triangle"></i> 有问题</button>` : ''}
-            ${o.status === 'submitted' ? `<button onclick="confirmOrder(${o.id})" class="action-button confirm-button"><i class="fas fa-check"></i> 确认无误</button>` : ''}
+          <p class="account"><strong>YouTube：</strong>${o.account.includes('uploads') ? `<a href="/${o.account}" target="_blank">查看二维码</a>` : '未上传二维码'}</p>
+          ${o.remark ? `<p class="remark"><strong>备注：</strong><strong>${escapeHtml(o.remark)}</strong></p>` : '<p class="remark"><strong>备注：</strong><strong></strong></p>'}
+          <div class="time-info">
+            <p class="time">提交时间：${formatDateTime(o.created_at)}</p>
+            ${o.completed_at ? `<p class="time">完成时间：${formatDateTime(o.completed_at)}</p>` : ''}
           </div>
-        </div>
-      `;
-      
-      // 添加到fragment
-      const node = template.content.firstChild;
-      fragment.appendChild(node.cloneNode(true));
+          ${o.status === 'accepted' || o.status === 'submitted' ? `<button class="confirm-btn" onclick="confirmOrder(${o.id})">确认</button>` : ''}
+          <button class="detail-btn" onclick="showOrderDetail(${o.id})">详情</button>
+        </div>`;
+      gridContainer.insertAdjacentHTML('beforeend', html);
     });
-    
-    // 一次性替换DOM内容
-    gridContainer.innerHTML = '';
-    gridContainer.appendChild(fragment);
   }
-
+  
   // 渲染表格视图
   function renderTableView(container, orders) {
     let html = `
@@ -2423,33 +2389,13 @@
     }
   }
 
-  // 注意：这里曾有一个renderOrders函数的重复定义，已移除
-  
-  // 初始化页面
-  document.addEventListener('DOMContentLoaded', function() {
-    try {
-      console.log('页面加载完成，开始初始化');
-      
-      // 加载用户价格
-      loadUserPrices();
-      
-      // 加载活跃卖家
-      loadActiveSellers();
-      
-      // 加载订单数据
-      loadOrders();
-      
-      // 启动自动刷新
-      startAutoRefresh();
-      
-      // 确保加载指示器正确显示/隐藏
-      setTimeout(hideLoadingIndicator, 3000); // 保险措施，3秒后无论如何都隐藏加载指示器
-      
-    } catch (e) {
-      console.error('初始化页面出错:', e);
-      hideLoadingIndicator();
+  // 隐藏加载指示器
+  function hideLoadingIndicator() {
+    const indicator = document.getElementById('refreshIndicator');
+    if (indicator) {
+      indicator.classList.remove('show');
     }
-  });
+  }
 </script>
 
 </body>
