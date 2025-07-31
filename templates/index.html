@@ -1329,7 +1329,7 @@
   let searchKeyword = ''; // 搜索关键词
   let autoRefreshInterval = null;
   let userId = '{{ session.user_id }}'; // 当前用户ID
-  let isAdmin = {{ 'true' if session.is_admin else 'false' }}; // 是否是管理员
+  let isAdmin = {{ session.is_admin|default(false)|tojson }}; // 是否是管理员
   let lastOrdersHash = ''; // 用于检测订单变化的哈希
   let viewMode = 'table'; // 默认视图模式：grid 或 table
   let page = 1; // 当前页码
@@ -2084,12 +2084,30 @@
     try {
       const indicator = document.getElementById('refreshIndicator');
       if (!isAutoRefresh) {
+        const ordersContainer = document.getElementById('orders-container');
+        ordersContainer.innerHTML = '<div style="text-align:center;padding:20px;">加载订单中，请稍候...</div>';
         indicator.textContent = "正在加载...";
         indicator.classList.add('show');
       }
       
       const response = await fetch('/orders/recent');
+      
+      // 检查响应状态
+      if (!response.ok) {
+        throw new Error(`HTTP错误: ${response.status}`);
+      }
+      
       const orders = await response.json();
+      
+      // 检查返回的数据是否为错误消息
+      if (orders && orders.error) {
+        throw new Error(orders.error);
+      }
+      
+      // 检查是否返回了有效的数组
+      if (!Array.isArray(orders)) {
+        throw new Error('服务器返回了无效的数据格式');
+      }
       
       // 生成并比较哈希，检测是否有变化
       const newHash = generateOrdersHash(orders);
@@ -2129,6 +2147,25 @@
       }
     } catch (error) {
       console.error('加载订单失败:', error);
+      const ordersContainer = document.getElementById('orders-container');
+      if (ordersContainer) {
+        ordersContainer.innerHTML = `
+          <div style="text-align:center;padding:20px;color:#e53e3e;">
+            <div style="margin-bottom:10px;"><i class="fas fa-exclamation-circle" style="font-size:24px;"></i></div>
+            <div>加载订单失败: ${error.message}</div>
+            <button onclick="loadOrders()" style="margin-top:15px;padding:8px 16px;background:#4299e1;color:white;border:none;border-radius:4px;cursor:pointer;">
+              <i class="fas fa-sync-alt"></i> 重试
+            </button>
+          </div>
+        `;
+      }
+      
+      // 5秒后自动重试
+      if (!isAutoRefresh) {
+        setTimeout(() => {
+          loadOrders(true);
+        }, 5000);
+      }
     } finally {
       hideLoadingIndicator();
     }
@@ -2392,9 +2429,9 @@
   // 隐藏加载指示器
   function hideLoadingIndicator() {
     const indicator = document.getElementById('refreshIndicator');
-    if (indicator) {
+    setTimeout(() => {
       indicator.classList.remove('show');
-    }
+    }, 1000);
   }
 </script>
 

@@ -222,7 +222,10 @@ def register_routes(app, notification_queue):
             if not os.path.exists(save_path):
                 os.makedirs(save_path, exist_ok=True)
                 # 确保目录权限正确
-                os.chmod(save_path, 0o755)
+                try:
+                    os.chmod(save_path, 0o755)
+                except Exception as e:
+                    logger.warning(f"修改目录权限失败: {str(e)}")
                 
             file_path = os.path.join(save_path, unique_filename)
             
@@ -231,7 +234,16 @@ def register_routes(app, notification_queue):
             shutil.copy2(temp_path, file_path)
             
             # 确保图片权限正确
-            os.chmod(file_path, 0o644)
+            try:
+                os.chmod(file_path, 0o644)
+            except Exception as e:
+                logger.warning(f"修改文件权限失败: {str(e)}")
+            
+            # 删除临时文件
+            try:
+                os.remove(temp_path)
+            except Exception as e:
+                logger.warning(f"删除临时文件失败: {str(e)}")
             
             # 验证文件是否成功保存
             if not os.path.exists(file_path):
@@ -245,9 +257,10 @@ def register_routes(app, notification_queue):
                 return jsonify({"success": False, "error": "图片保存失败，文件大小为0"}), 500
                 
             logger.info(f"图片成功保存到: {file_path}，大小: {file_size} 字节")
+            logger.info(f"图片URL访问路径: /static/uploads/{timestamp}/{unique_filename}")
             
         except Exception as e:
-            logger.error(f"保存图片时出错: {str(e)}")
+            logger.error(f"保存图片时出错: {str(e)}", exc_info=True)
             return jsonify({"success": False, "error": f"保存图片时出错: {str(e)}"}), 500
         
         # 使用文件路径作为账号，密码设为空(因为现在依靠二维码)
@@ -445,59 +458,72 @@ def register_routes(app, notification_queue):
     @login_required
     def orders_recent():
         """获取用户最近的订单"""
-        # 获取查询参数
-        limit = int(request.args.get('limit', 1000))  # 增加默认值以支持加载更多订单
-        offset = int(request.args.get('offset', 0))
-        user_filter = ""
-        params = []
-        
-        # 非管理员只能看到自己的订单
-        if not session.get('is_admin'):
-            user_filter = "WHERE user_id = ?"
-            params.append(session.get('user_id'))
-        
-        # 查询订单
-        orders = execute_query(f"""
-            SELECT id, account, password, package, status, created_at, accepted_at, completed_at,
-                   remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name
-            FROM orders 
-            {user_filter}
-            ORDER BY id DESC LIMIT ? OFFSET ?
-        """, params + [limit, offset], fetch=True)
-        
-        logger.info(f"查询到 {len(orders)} 条订单记录")
-        
-        # 格式化数据
-        formatted_orders = []
-        for order in orders:
-            oid, account, password, package, status, created_at, accepted_at, completed_at, remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name = order
+        try:
+            # 获取查询参数
+            limit = int(request.args.get('limit', 1000))  # 增加默认值以支持加载更多订单
+            offset = int(request.args.get('offset', 0))
+            user_filter = ""
+            params = []
             
-            # 获取sellers表中的显示昵称
-            seller_display = get_seller_display_name(accepted_by)
+            # 记录请求参数
+            logger.info(f"获取订单请求: limit={limit}, offset={offset}, user_id={session.get('user_id')}, is_admin={session.get('is_admin')}")
             
-            # 如果是失败状态，翻译失败原因
-            translated_remark = remark
-            if status == STATUS['FAILED'] and remark:
-                translated_remark = REASON_TEXT_ZH.get(remark, remark)
+            # 非管理员只能看到自己的订单
+            if not session.get('is_admin'):
+                user_filter = "WHERE user_id = ?"
+                params.append(session.get('user_id'))
             
-            order_data = {
-                "id": oid,
-                "account": account,
-                "password": password,
-                "package": package,
-                "status": status,
-                "status_text": STATUS_TEXT_ZH.get(status, status),
-                "created_at": created_at,
-                "accepted_at": accepted_at or "",
-                "completed_at": completed_at or "",
-                "remark": translated_remark or "",
-                "accepted_by": seller_display or "",
-                "can_cancel": status == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == user_id)
-            }
-            formatted_orders.append(order_data)
+            # 查询订单
+            query = f"""
+                SELECT id, account, password, package, status, created_at, accepted_at, completed_at,
+                       remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name
+                FROM orders 
+                {user_filter}
+                ORDER BY id DESC LIMIT ? OFFSET ?
+            """
+            
+            logger.info(f"执行订单查询: {query}")
+            orders = execute_query(query, params + [limit, offset], fetch=True)
+            
+            logger.info(f"查询到 {len(orders)} 条订单记录")
+            
+            # 格式化数据
+            formatted_orders = []
+            for order in orders:
+                oid, account, password, package, status, created_at, accepted_at, completed_at, remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name = order
+                
+                # 获取sellers表中的显示昵称
+                seller_display = get_seller_display_name(accepted_by)
+                
+                # 如果是失败状态，翻译失败原因
+                translated_remark = remark
+                if status == STATUS['FAILED'] and remark:
+                    translated_remark = REASON_TEXT_ZH.get(remark, remark)
+                
+                order_data = {
+                    "id": oid,
+                    "account": account,
+                    "password": password,
+                    "package": package,
+                    "status": status,
+                    "status_text": STATUS_TEXT_ZH.get(status, status),
+                    "created_at": created_at,
+                    "accepted_at": accepted_at or "",
+                    "completed_at": completed_at or "",
+                    "remark": translated_remark or "",
+                    "accepted_by": seller_display or "",
+                    "can_cancel": status == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == user_id),
+                    "creator": web_user_id or ""  # 确保有创建者信息，用于前端显示
+                }
+                formatted_orders.append(order_data)
+            
+            # 返回前记录数据大小
+            logger.info(f"返回订单数据: {len(formatted_orders)} 条")
+            return jsonify(formatted_orders)
         
-        # 直接返回订单列表，而不是嵌套在orders字段中
-        return jsonify(formatted_orders)
+        except Exception as e:
+            logger.error(f"获取订单列表时出错: {str(e)}", exc_info=True)
+            return jsonify({"error": f"获取订单数据失败: {str(e)}"}), 500
 
     @app.route('/orders/cancel/<int:oid>', methods=['POST'])
     @login_required

@@ -89,13 +89,112 @@ if not os.path.exists(uploads_dir):
     except Exception as e:
         logger.error(f"创建上传目录失败: {str(e)}", exc_info=True)
 
+# 在应用启动时检查目录权限和结构
+@app.before_first_request
+def check_directories():
+    """在首次请求之前检查必要的目录结构和权限"""
+    try:
+        # 确认静态文件目录存在并可写
+        static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+        if not os.path.exists(static_dir):
+            os.makedirs(static_dir)
+            logger.info(f"创建了静态文件目录: {static_dir}")
+        
+        # 确认上传目录存在并可写
+        uploads_dir = os.path.join(static_dir, 'uploads')
+        if not os.path.exists(uploads_dir):
+            os.makedirs(uploads_dir)
+            logger.info(f"创建了上传目录: {uploads_dir}")
+            
+        # 确认每日上传目录存在（按日期分类）
+        import datetime
+        today = datetime.datetime.now().strftime("%Y%m%d")
+        today_dir = os.path.join(uploads_dir, today)
+        if not os.path.exists(today_dir):
+            os.makedirs(today_dir)
+            logger.info(f"创建了今日上传目录: {today_dir}")
+            
+        # 测试目录写入权限
+        test_file = os.path.join(today_dir, ".test_write_permission")
+        try:
+            with open(test_file, 'w') as f:
+                f.write("test")
+            os.remove(test_file)
+            logger.info(f"目录权限测试成功: {today_dir}")
+        except Exception as e:
+            logger.error(f"目录 {today_dir} 没有写入权限: {str(e)}")
+            
+        # 记录应用状态信息
+        logger.info(f"应用静态文件配置: app.static_folder={app.static_folder}, app.static_url_path={app.static_url_path}")
+        logger.info(f"当前工作目录: {os.getcwd()}")
+            
+    except Exception as e:
+        logger.error(f"检查目录结构时发生错误: {str(e)}", exc_info=True)
+
+# 添加调试路由
+@app.route('/debug/dirs')
+def debug_dirs():
+    """显示应用的目录结构信息，用于调试"""
+    try:
+        import sys
+        import platform
+        
+        # 收集系统和环境信息
+        info = {
+            "app_config": {
+                "static_folder": app.static_folder,
+                "static_url_path": app.static_url_path,
+                "instance_path": app.instance_path,
+                "template_folder": app.template_folder,
+                "debug": app.debug,
+            },
+            "dirs": {
+                "current_dir": os.getcwd(),
+                "app_dir": os.path.dirname(os.path.abspath(__file__)),
+                "static_dir": os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static'),
+                "uploads_dir": os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads'),
+            },
+            "sys_info": {
+                "platform": platform.platform(),
+                "python": sys.version,
+                "env": {k: v for k, v in os.environ.items() if k.startswith(('FLASK_', 'APP_', 'DATABASE_', 'PORT'))}
+            }
+        }
+        
+        # 检查目录是否存在
+        for name, path in info["dirs"].items():
+            info["dirs"][f"{name}_exists"] = os.path.exists(path)
+            if os.path.exists(path):
+                try:
+                    info["dirs"][f"{name}_writable"] = os.access(path, os.W_OK)
+                except:
+                    info["dirs"][f"{name}_writable"] = False
+        
+        return jsonify(info)
+    except Exception as e:
+        logger.error(f"生成调试信息时出错: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 # 注册Web路由，并将队列传递给它
 register_routes(app, notification_queue)
 
 # 添加静态文件路由，确保图片URLs可以访问
 @app.route('/static/uploads/<path:filename>')
 def serve_uploads(filename):
-    return app.send_static_file(f'uploads/{filename}')
+    # 构建正确的路径，不使用app.send_static_file，而是直接从文件系统路径发送文件
+    import os
+    from flask import send_from_directory
+    
+    uploads_dir = os.path.join(app.static_folder, 'uploads')
+    # 确保路径存在
+    if not os.path.exists(uploads_dir):
+        os.makedirs(uploads_dir, exist_ok=True)
+    
+    try:
+        return send_from_directory(uploads_dir, filename)
+    except Exception as e:
+        logger.error(f"访问文件 uploads/{filename} 时出错: {str(e)}")
+        return "File not found", 404
 
 # 添加一个直接访问图片的路由，支持完整路径
 @app.route('/<path:filepath>')
@@ -104,10 +203,14 @@ def serve_file(filepath):
     if 'static/uploads' in filepath:
         try:
             # 从完整路径中提取相对路径
+            from flask import send_from_directory
+            import os
+            
             parts = filepath.split('static/uploads/')
             if len(parts) > 1:
                 filename = parts[1]
-                return app.send_static_file(f'uploads/{filename}')
+                uploads_dir = os.path.join(app.static_folder, 'uploads')
+                return send_from_directory(uploads_dir, filename)
         except Exception as e:
             logger.error(f"访问文件 {filepath} 时出错: {str(e)}")
     
@@ -120,25 +223,33 @@ def view_image(filepath):
     """提供一个专门的图片查看页面"""
     try:
         # 构建完整的文件路径
-        full_path = filepath
-        if not os.path.exists(full_path):
-            # 尝试添加static前缀
-            if not full_path.startswith('static/'):
-                full_path = os.path.join('static', filepath)
+        import os
+        from flask import send_file
+        import mimetypes
+        
+        # 检查文件路径是否含有static/uploads前缀
+        if 'static/uploads' in filepath:
+            # 提取uploads后面的部分
+            parts = filepath.split('static/uploads/')
+            if len(parts) > 1:
+                rel_path = parts[1]
+                full_path = os.path.join(app.static_folder, 'uploads', rel_path)
+        else:
+            # 如果没有static/uploads前缀，尝试当作相对路径处理
+            full_path = filepath
+            if not os.path.exists(full_path):
+                # 尝试添加static前缀
+                if not full_path.startswith('static/'):
+                    full_path = os.path.join('static', filepath)
         
         if os.path.exists(full_path) and os.path.isfile(full_path):
-            # 读取文件内容
-            with open(full_path, 'rb') as f:
-                file_content = f.read()
-            
             # 确定MIME类型
-            import mimetypes
             mime_type = mimetypes.guess_type(full_path)[0] or 'application/octet-stream'
             
             # 如果是图片，返回HTML页面显示图片
             if mime_type.startswith('image/'):
                 # 获取文件的相对URL
-                file_url = '/' + filepath if not filepath.startswith('/') else filepath
+                file_url = '/static/uploads/' + os.path.relpath(full_path, os.path.join(app.static_folder, 'uploads')) if 'uploads' in full_path else '/' + filepath
                 
                 # 返回HTML页面
                 html = f"""
@@ -171,6 +282,7 @@ def view_image(filepath):
                 # 如果不是图片，直接返回文件
                 return send_file(full_path, mimetype=mime_type)
         else:
+            logger.error(f"找不到文件: {full_path}")
             return "File not found", 404
     except Exception as e:
         logger.error(f"查看图片 {filepath} 时出错: {str(e)}", exc_info=True)
