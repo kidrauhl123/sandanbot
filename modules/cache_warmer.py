@@ -20,10 +20,10 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger('cache_warmer')
 
 # 全局配置
-BASE_URL = os.getenv('APP_URL', 'http://127.0.0.1:5000')  # 应用URL
-ADMIN_TOKEN = os.getenv('ADMIN_TOKEN', None)  # 管理员令牌，用于不需要登录的API调用
-WARM_INTERVAL = int(os.getenv('WARM_INTERVAL', 120))  # 预热间隔（秒）
-ENABLED = os.getenv('CACHE_WARMER_ENABLED', 'True').lower() == 'true'  # 是否启用
+BASE_URL = os.getenv('APP_URL', 'http://localhost:5000')  # 应用URL，修改为localhost
+ADMIN_TOKEN = os.getenv('ADMIN_TOKEN', 'admin_secret_token')  # 管理员令牌，用于不需要登录的API调用
+WARM_INTERVAL = int(os.getenv('WARM_INTERVAL', 300))  # 预热间隔（秒），增加到5分钟
+ENABLED = os.getenv('CACHE_WARMER_ENABLED', 'False').lower() == 'true'  # 默认禁用
 
 # 预热会话
 session = requests.Session()
@@ -42,18 +42,27 @@ def warm_orders_cache():
         
         for endpoint in endpoints:
             url = f"{BASE_URL}{endpoint}"
-            headers = {}
-            if ADMIN_TOKEN:
-                headers['X-Admin-Token'] = ADMIN_TOKEN
+            # 添加必要的请求头
+            headers = {
+                'X-Cache-Warmer': 'true',
+                'X-Admin-Token': ADMIN_TOKEN,
+                'User-Agent': 'Cache-Warmer/1.0'
+            }
                 
             start_time = time.time()
-            response = session.get(url, headers=headers, timeout=10)
-            elapsed_time = time.time() - start_time
-            
-            if response.status_code == 200:
-                logger.info(f"预热成功: {url} - 耗时: {elapsed_time:.2f}秒")
-            else:
-                logger.warning(f"预热失败: {url} - 状态码: {response.status_code}")
+            try:
+                response = session.get(url, headers=headers, timeout=5)  # 减少超时时间
+                elapsed_time = time.time() - start_time
+                
+                if response.status_code == 200:
+                    logger.info(f"预热成功: {url} - 耗时: {elapsed_time:.2f}秒")
+                else:
+                    logger.warning(f"预热失败: {url} - 状态码: {response.status_code}")
+            except requests.exceptions.ConnectionError:
+                logger.error(f"连接失败: {url} - 服务器可能未启动")
+                return  # 如果连接失败，直接返回，不尝试其他端点
+            except requests.exceptions.Timeout:
+                logger.error(f"请求超时: {url}")
                 
     except Exception as e:
         logger.error(f"预热订单缓存出错: {str(e)}", exc_info=True)

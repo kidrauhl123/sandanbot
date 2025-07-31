@@ -2561,11 +2561,6 @@
     // 加载活跃卖家列表
     loadActiveSellers();
     
-    // 紧急模式提示
-    if (isEmergencyMode) {
-      showEmergencyModeNotice();
-    }
-    
     // 搜索功能初始化
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
@@ -2609,8 +2604,50 @@
     }
   });
 
-  // 显示紧急模式通知
-  function showEmergencyModeNotice() {
+  // 显示订单详情
+  function showOrderDetail(orderId) {
+    // 先从已加载的订单数据中找
+    let order = null;
+    
+    // 检查当前页的订单
+    if (orderPages[currentPage]) {
+      order = orderPages[currentPage].find(o => o.id === orderId);
+    }
+    
+    // 如果没找到，在全局数据中再找一次
+    if (!order && allOrders.length > 0) {
+      order = allOrders.find(o => o.id === orderId);
+    }
+    
+    if (!order) return;
+    
+    // 构建详细信息
+    let detailMessage = `订单 #${orderId} 详情\n\n`;
+    detailMessage += `状态: ${order.status_text || order.status}\n`;
+    detailMessage += `提交时间: ${formatDateTime(order.created_at)}\n`;
+    
+    if (order.account) {
+      detailMessage += `YouTube: ${order.account.includes('uploads') ? '已上传二维码' : order.account}\n`;
+    }
+    
+    if (order.completed_at) {
+      detailMessage += `完成时间: ${formatDateTime(order.completed_at)}\n`;
+    }
+    
+    if (order.remark) {
+      detailMessage += `备注: ${order.remark}\n`;
+    }
+    
+    // 只有管理员可以看到接单人
+    if (isAdmin && order.accepted_by) {
+      detailMessage += `接单人: ${order.accepted_by}\n`;
+    }
+    
+    alert(detailMessage);
+  }
+
+  // 已删除的紧急模式通知函数
+  function _unused_showEmergencyModeNotice() {
     const notice = document.createElement('div');
     notice.className = 'emergency-mode-notice';
     notice.innerHTML = `
@@ -2785,6 +2822,116 @@
     } catch (e) {
       console.error('质疑订单失败', e);
       alert('质疑提交失败，请重试');
+    }
+  }
+
+  // 渲染网格视图
+  function renderGridView(gridContainer, orders) {
+    gridContainer.innerHTML = '';
+    
+    // 如果没有订单，显示提示
+    if (orders.length === 0) {
+      gridContainer.innerHTML = '<div class="no-results">暂无订单</div>';
+      return;
+    }
+    
+    orders.forEach(o => {
+      const cls = 'status-' + o.status.replace('已','').toLowerCase();
+      
+      const html = `
+        <div class="order-list-item" data-order-id="${o.id}">
+          <h4>订单 #${o.id} <span class="status-badge ${cls}">${o.status_text || o.status}</span></h4>
+          ${isAdmin && o.accepted_by ? `<p class="creator">接单者：${escapeHtml(o.accepted_by)}</p>` : ''}
+          <p class="account"><strong>YouTube：</strong>${o.account ? (o.account.includes('uploads') ? `<a href="/${o.account}" target="_blank">查看二维码</a>` : escapeHtml(o.account)) : '未上传二维码'}</p>
+          ${o.remark ? `<p class="remark"><strong>备注：</strong><strong>${escapeHtml(o.remark)}</strong></p>` : '<p class="remark"><strong>备注：</strong><strong></strong></p>'}
+          <div class="time-info">
+            <p class="time">提交时间：${formatDateTime(o.created_at)}</p>
+            ${o.completed_at ? `<p class="time">完成时间：${formatDateTime(o.completed_at)}</p>` : ''}
+          </div>
+          ${o.status === 'accepted' || o.status === 'submitted' ? `<button class="confirm-btn" onclick="confirmOrder(${o.id})">确认</button>` : ''}
+          <button class="detail-btn" onclick="showOrderDetail(${o.id})">详情</button>
+        </div>`;
+      gridContainer.insertAdjacentHTML('beforeend', html);
+    });
+  }
+  
+  // 渲染表格视图
+  function renderTableView(container, orders) {
+    let html = `
+      <table class="orders-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>YouTube</th>
+            <th>状态</th>
+            <th>备注</th>
+            <th>接单者</th>
+            <th>提交时间</th>
+            <th>完成时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    
+    orders.forEach(o => {
+      const cls = 'status-' + o.status.replace('已','').toLowerCase();
+      
+      html += `
+        <tr data-order-id="${o.id}">
+          <td>${o.id}</td>
+          <td class="account-cell">${o.account ? (o.account.includes('uploads') ? `<a href="/${o.account}" target="_blank">查看二维码</a>` : escapeHtml(o.account)) : '未上传二维码'}</td>
+          <td><span class="status-badge ${cls}">${o.status_text || o.status}</span></td>
+          <td class="remark-cell" data-order-id="${o.id}">
+            <span class="remark-text">${escapeHtml(o.remark || '')}</span>
+            <i class="fas fa-pen remark-edit-icon" style="display:none;margin-left:8px;cursor:pointer;color:#667eea;" onclick="editRemark(${o.id}, '${escapeHtml(o.remark || '').replace(/'/g, "\\'")}')"></i>
+          </td>
+          <td class="seller-cell">${o.accepted_by || '-'}</td>
+          <td>${formatDateTime(o.created_at)}</td>
+          <td>${o.completed_at ? formatDateTime(o.completed_at) : '-'}</td>
+          <td>
+            <button class="detail-btn" onclick="showOrderDetail(${o.id})">详情</button>
+            ${(o.status === 'accepted' || o.status === 'submitted') ? `<button class="confirm-btn" onclick="confirmOrder(${o.id})">确认</button>` : ''}
+          </td>
+        </tr>
+      `;
+    });
+    
+    html += `
+        </tbody>
+      </table>
+    `;
+    
+    container.innerHTML = html;
+  }
+
+  // HTML转义函数
+  function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+  
+  // 格式化日期时间
+  function formatDateTime(dateStr) {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+    } catch (e) {
+      return dateStr;
     }
   }
 </script>

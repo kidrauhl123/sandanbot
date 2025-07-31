@@ -393,24 +393,25 @@ if __name__ == "__main__":
     sync_env_sellers_to_db()
     logger.info("环境变量卖家同步完成")
     
-    # 启动 Bot 线程，并将队列传递给它
-    logger.info("正在启动Telegram机器人...")
-    bot_thread = threading.Thread(target=run_bot, args=(notification_queue,), daemon=True)
-    bot_thread.start()
-    logger.info("Telegram机器人线程已启动")
+    # 导入TG机器人模块
+    try:
+        from modules.tgbot import start_bot
+        
+        # 启动TG机器人线程
+        bot_thread = threading.Thread(target=start_bot, daemon=True)
+        bot_thread.start()
+        logger.info("Telegram机器人线程已启动")
+    except Exception as e:
+        logger.error(f"启动TG机器人失败: {str(e)}", exc_info=True)
     
-    # 启用紧急模式
-    os.environ['EMERGENCY_MODE'] = 'true'
-    # 启用缓存预热器
-    os.environ['CACHE_WARMER_ENABLED'] = 'true'
-    # 设置缓存预热间隔
-    os.environ['WARM_INTERVAL'] = '120'
+    # 禁用紧急模式
+    os.environ['EMERGENCY_MODE'] = 'false'
+    # 禁用缓存预热器
+    os.environ['CACHE_WARMER_ENABLED'] = 'false'
     
     # 设置线程数
     import threading
     logger.info(f"启动时活跃线程数: {threading.active_count()}")
     
     # 启动 Flask
-    port = int(os.environ.get("PORT", 5000))
-    logger.info(f"正在启动Flask服务器，端口：{port}...")
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    app.run(host='0.0.0.0', debug=True)
