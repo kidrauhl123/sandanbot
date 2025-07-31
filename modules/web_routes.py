@@ -57,12 +57,33 @@ def get_seller_display_name(accepted_by):
     if not accepted_by:
         return ""
     
-    seller_info = execute_query("SELECT nickname FROM sellers WHERE telegram_id = %s", (accepted_by,), fetch=True)
-    if seller_info and seller_info[0] and seller_info[0][0]:
-        return seller_info[0][0]
-    
-    # 如果没有设置昵称，返回空字符串而不是TG信息（保护隐私）
-    return ""
+    try:
+        # 使用占位符，区分PostgreSQL和SQLite
+        if DATABASE_URL.startswith('postgres'):
+            seller_info = execute_query("SELECT nickname FROM sellers WHERE telegram_id = %s", (accepted_by,), fetch=True)
+        else:
+            seller_info = execute_query("SELECT nickname FROM sellers WHERE telegram_id = ?", (accepted_by,), fetch=True)
+            
+        if seller_info and seller_info[0] and seller_info[0][0]:
+            return seller_info[0][0]
+        
+        # 如果没有设置昵称，尝试使用first_name或username
+        if DATABASE_URL.startswith('postgres'):
+            seller_name = execute_query("SELECT first_name, username FROM sellers WHERE telegram_id = %s", (accepted_by,), fetch=True)
+        else:
+            seller_name = execute_query("SELECT first_name, username FROM sellers WHERE telegram_id = ?", (accepted_by,), fetch=True)
+            
+        if seller_name and seller_name[0]:
+            if seller_name[0][0]:  # 优先使用first_name
+                return seller_name[0][0]
+            elif seller_name[0][1]:  # 其次使用username
+                return seller_name[0][1]
+        
+        # 如果都没有，返回ID
+        return f"卖家 {accepted_by}"
+    except Exception as e:
+        logger.error(f"获取卖家显示名称失败: {str(e)}", exc_info=True)
+        return f"卖家 {accepted_by}"
 
 def register_routes(app, notification_queue):
     @app.route('/login', methods=['GET', 'POST'])
@@ -461,59 +482,67 @@ def register_routes(app, notification_queue):
     @login_required
     def orders_recent():
         """获取用户最近的订单"""
-        # 获取查询参数
-        limit = int(request.args.get('limit', 1000))  # 增加默认值以支持加载更多订单
-        offset = int(request.args.get('offset', 0))
-        user_filter = ""
-        params = []
-        
-        # 非管理员只能看到自己的订单
-        if not session.get('is_admin'):
-            user_filter = "WHERE user_id = ?"
-            params.append(session.get('user_id'))
-        
-        # 查询订单
-        orders = execute_query(f"""
-            SELECT id, account, password, package, status, created_at, accepted_at, completed_at,
-                   remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name
-            FROM orders 
-            {user_filter}
-            ORDER BY id DESC LIMIT ? OFFSET ?
-        """, params + [limit, offset], fetch=True)
-        
-        logger.info(f"查询到 {len(orders)} 条订单记录")
-        
-        # 格式化数据
-        formatted_orders = []
-        for order in orders:
-            oid, account, password, package, status, created_at, accepted_at, completed_at, remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name = order
+        try:
+            # 获取查询参数
+            limit = int(request.args.get('limit', 1000))  # 增加默认值以支持加载更多订单
+            offset = int(request.args.get('offset', 0))
+            user_filter = ""
+            params = []
             
-            # 获取sellers表中的显示昵称
-            seller_display = get_seller_display_name(accepted_by)
+            # 非管理员只能看到自己的订单
+            if not session.get('is_admin'):
+                user_filter = "WHERE user_id = ?"
+                params.append(session.get('user_id'))
             
-            # 如果是失败状态，翻译失败原因
-            translated_remark = remark
-            if status == STATUS['FAILED'] and remark:
-                translated_remark = REASON_TEXT_ZH.get(remark, remark)
+            # 查询订单
+            orders = execute_query(f"""
+                SELECT id, account, password, package, status, created_at, accepted_at, completed_at,
+                       remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name
+                FROM orders 
+                {user_filter}
+                ORDER BY id DESC LIMIT ? OFFSET ?
+            """, params + [limit, offset], fetch=True)
             
-            order_data = {
-                "id": oid,
-                "account": account,
-                "password": password,
-                "package": package,
-                "status": status,
-                "status_text": STATUS_TEXT_ZH.get(status, status),
-                "created_at": created_at,
-                "accepted_at": accepted_at or "",
-                "completed_at": completed_at or "",
-                "remark": translated_remark or "",
-                "accepted_by": seller_display or "",
-                "can_cancel": status == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == user_id)
-            }
-            formatted_orders.append(order_data)
-        
-        # 直接返回订单列表，而不是嵌套在orders字段中
-        return jsonify(formatted_orders)
+            logger.info(f"查询到 {len(orders)} 条订单记录")
+            
+            # 格式化数据
+            formatted_orders = []
+            for order in orders:
+                try:
+                    oid, account, password, package, status, created_at, accepted_at, completed_at, remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name = order
+                    
+                    # 获取sellers表中的显示昵称
+                    seller_display = get_seller_display_name(accepted_by)
+                    
+                    # 如果是失败状态，翻译失败原因
+                    translated_remark = remark
+                    if status == STATUS['FAILED'] and remark:
+                        translated_remark = REASON_TEXT_ZH.get(remark, remark)
+                    
+                    order_data = {
+                        "id": oid,
+                        "account": account,
+                        "password": password or "",
+                        "package": package or "",
+                        "status": status or "unknown",
+                        "status_text": STATUS_TEXT_ZH.get(status, status) if status else "未知",
+                        "created_at": created_at or "",
+                        "accepted_at": accepted_at or "",
+                        "completed_at": completed_at or "",
+                        "remark": translated_remark or "",
+                        "accepted_by": seller_display or "",
+                        "can_cancel": status == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == user_id)
+                    }
+                    formatted_orders.append(order_data)
+                except Exception as e:
+                    logger.error(f"处理订单数据时出错 (ID={order[0] if order and len(order) > 0 else 'unknown'}): {str(e)}", exc_info=True)
+                    # 继续处理下一个订单，不中断整个循环
+            
+            # 直接返回订单列表，而不是嵌套在orders字段中
+            return jsonify(formatted_orders)
+        except Exception as e:
+            logger.error(f"获取最近订单失败: {str(e)}", exc_info=True)
+            return jsonify({"error": "获取订单列表失败，请稍后再试"}), 500
 
     @app.route('/orders/cancel/<int:oid>', methods=['POST'])
     @login_required
@@ -2265,7 +2294,7 @@ def register_routes(app, notification_queue):
     @admin_required
     def admin_api_distribution_status():
         """查看和重置订单分流状态"""
-        from modules.database import get_db_connection, is_postgres
+        # 移除重复的导入语句，因为这些函数已在文件顶部导入
         
         if request.method == 'GET':
             # 获取分流信息
