@@ -460,66 +460,138 @@ def register_routes(app, notification_queue):
         """获取用户最近的订单"""
         try:
             # 获取查询参数
-            limit = int(request.args.get('limit', 1000))  # 增加默认值以支持加载更多订单
+            limit = int(request.args.get('limit', 20))  # 减少默认返回数量
             offset = int(request.args.get('offset', 0))
-            user_filter = ""
-            params = []
+            page = int(request.args.get('page', 1))
+            per_page = int(request.args.get('per_page', 10))  # 每页显示数量
+            if page > 1:
+                offset = (page - 1) * per_page
+                limit = per_page
+            
+            # 获取简要信息还是详细信息
+            detailed = request.args.get('detailed', 'false').lower() == 'true'
+            
+            # 获取指定ID的订单详情
+            ids_param = request.args.get('ids', '')
+            order_ids = []
+            if ids_param:
+                try:
+                    order_ids = [int(id_) for id_ in ids_param.split(',') if id_.strip()]
+                except ValueError:
+                    logger.warning(f"无效的订单ID列表: {ids_param}")
             
             # 记录请求参数
-            logger.info(f"获取订单请求: limit={limit}, offset={offset}, user_id={session.get('user_id')}, is_admin={session.get('is_admin')}")
+            logger.info(f"获取订单请求: limit={limit}, offset={offset}, page={page}, detailed={detailed}, ids={order_ids}")
+            
+            # 构建查询条件
+            user_filter = ""
+            params = []
+            where_clauses = []
             
             # 非管理员只能看到自己的订单
             if not session.get('is_admin'):
-                user_filter = "WHERE user_id = ?"
+                where_clauses.append("user_id = ?")
                 params.append(session.get('user_id'))
+            
+            # 如果指定了订单ID，则优先查询这些订单
+            if order_ids:
+                id_placeholders = ','.join(['?'] * len(order_ids))
+                where_clauses.append(f"id IN ({id_placeholders})")
+                params.extend(order_ids)
+                detailed = True  # 指定ID时总是获取详细信息
+            
+            # 组合WHERE子句
+            if where_clauses:
+                user_filter = "WHERE " + " AND ".join(where_clauses)
+            
+            # 根据是否需要详细信息选择查询字段
+            fields = "id, status, created_at, accepted_by, remark" if not detailed else "id, account, password, package, status, created_at, accepted_at, completed_at, remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name"
             
             # 查询订单
             query = f"""
-                SELECT id, account, password, package, status, created_at, accepted_at, completed_at,
-                       remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name
+                SELECT {fields}
                 FROM orders 
                 {user_filter}
-                ORDER BY id DESC LIMIT ? OFFSET ?
             """
             
-            logger.info(f"执行订单查询: {query}")
-            orders = execute_query(query, params + [limit, offset], fetch=True)
+            # 如果是按ID查询，则不需要排序和分页
+            if not order_ids:
+                query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+                params.extend([limit, offset])
+            
+            orders = execute_query(query, params, fetch=True)
             
             logger.info(f"查询到 {len(orders)} 条订单记录")
+            
+            # 如果不是按ID查询，则获取总订单数（用于分页）
+            total_count = 0
+            if not order_ids:
+                count_query = f"""
+                    SELECT COUNT(*) FROM orders {user_filter}
+                """
+                # 移除分页参数
+                count_params = params[:-2] if params and len(params) >= 2 else params
+                total_count = execute_query(count_query, count_params, fetch=True)[0][0]
+            else:
+                total_count = len(orders)
             
             # 格式化数据
             formatted_orders = []
             for order in orders:
-                oid, account, password, package, status, created_at, accepted_at, completed_at, remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name = order
+                if not detailed:
+                    # 简要信息
+                    oid, status, created_at, accepted_by, remark = order
+                    order_data = {
+                        "id": oid,
+                        "status": status,
+                        "status_text": STATUS_TEXT_ZH.get(status, status),
+                        "created_at": created_at,
+                        "accepted_by": get_seller_display_name(accepted_by) if accepted_by else "",
+                        "remark": remark or ""
+                    }
+                else:
+                    # 详细信息
+                    oid, account, password, package, status, created_at, accepted_at, completed_at, remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name = order
+                    
+                    # 获取sellers表中的显示昵称
+                    seller_display = get_seller_display_name(accepted_by)
+                    
+                    # 如果是失败状态，翻译失败原因
+                    translated_remark = remark
+                    if status == STATUS['FAILED'] and remark:
+                        translated_remark = REASON_TEXT_ZH.get(remark, remark)
+                    
+                    order_data = {
+                        "id": oid,
+                        "account": account,
+                        "password": password,
+                        "package": package,
+                        "status": status,
+                        "status_text": STATUS_TEXT_ZH.get(status, status),
+                        "created_at": created_at,
+                        "accepted_at": accepted_at or "",
+                        "completed_at": completed_at or "",
+                        "remark": translated_remark or "",
+                        "accepted_by": seller_display or "",
+                        "can_cancel": status == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == user_id),
+                        "creator": web_user_id or ""
+                    }
                 
-                # 获取sellers表中的显示昵称
-                seller_display = get_seller_display_name(accepted_by)
-                
-                # 如果是失败状态，翻译失败原因
-                translated_remark = remark
-                if status == STATUS['FAILED'] and remark:
-                    translated_remark = REASON_TEXT_ZH.get(remark, remark)
-                
-                order_data = {
-                    "id": oid,
-                    "account": account,
-                    "password": password,
-                    "package": package,
-                    "status": status,
-                    "status_text": STATUS_TEXT_ZH.get(status, status),
-                    "created_at": created_at,
-                    "accepted_at": accepted_at or "",
-                    "completed_at": completed_at or "",
-                    "remark": translated_remark or "",
-                    "accepted_by": seller_display or "",
-                    "can_cancel": status == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == user_id),
-                    "creator": web_user_id or ""  # 确保有创建者信息，用于前端显示
-                }
                 formatted_orders.append(order_data)
             
-            # 返回前记录数据大小
-            logger.info(f"返回订单数据: {len(formatted_orders)} 条")
-            return jsonify(formatted_orders)
+            # 返回订单数据和分页信息
+            response_data = {
+                "orders": formatted_orders,
+                "pagination": {
+                    "total": total_count,
+                    "page": page if not order_ids else 1,
+                    "per_page": per_page if not order_ids else total_count,
+                    "pages": (total_count + per_page - 1) // per_page if not order_ids else 1
+                }
+            }
+            
+            logger.info(f"返回订单数据: {len(formatted_orders)} 条，总数: {total_count}")
+            return jsonify(response_data)
         
         except Exception as e:
             logger.error(f"获取订单列表时出错: {str(e)}", exc_info=True)

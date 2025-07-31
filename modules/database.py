@@ -199,6 +199,16 @@ def init_postgres_db():
     )
     ''')
     
+    # 添加订单索引以提高查询性能
+    try:
+        c.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders (user_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders (created_at)")
+        conn.commit()
+        logger.info("为orders表添加索引成功")
+    except Exception as e:
+        logger.warning(f"为orders表添加索引时出错: {str(e)}")
+    
     # 创建用户表
     c.execute('''
     CREATE TABLE IF NOT EXISTS users (
