@@ -9,6 +9,7 @@ import sqlite3
 import json
 import random
 import string
+import functools
 
 from flask import Flask, request, render_template, jsonify, session, redirect, url_for, flash, send_file
 
@@ -121,38 +122,65 @@ def register_routes(app, notification_queue):
         session.clear()
         return redirect(url_for('login'))
 
+    # 简单内存缓存，用于首页订单加载
+    order_cache = {
+        'data': None,
+        'timestamp': 0,
+        'expiry': 10  # 缓存10秒
+    }
+
+    # 缓存装饰器
+    def cache_for_seconds(seconds=30):
+        def decorator(func):
+            cache = {}
+            
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                cache_key = str(args) + str(kwargs)
+                current_time = time.time()
+                
+                # 如果缓存有效，直接返回
+                if cache_key in cache and current_time - cache[cache_key]['time'] < seconds:
+                    return cache[cache_key]['result']
+                
+                # 否则执行函数并缓存结果
+                result = func(*args, **kwargs)
+                cache[cache_key] = {'result': result, 'time': current_time}
+                return result
+                
+            return wrapper
+        return decorator
+
+    # 修改原有首页函数，添加紧急模式
     @app.route('/', methods=['GET'])
     @login_required
     def index():
-        # 显示订单创建表单和最近订单
-        logger.info("访问首页")
-        logger.info(f"当前会话: {session}")
-        
+        """显示订单创建表单和最近订单(带紧急优化模式)"""
         try:
-            orders = execute_query("SELECT id, account, package, status, created_at FROM orders ORDER BY id DESC LIMIT 5", fetch=True)
-            logger.info(f"获取到最近订单: {orders}")
+            # 极简模式 - 只获取基础信息
+            emergency_mode = True
+            logger.info("访问首页 - 紧急优化模式")
             
             # 获取用户余额和透支额度
             user_id = session.get('user_id')
             balance = get_user_balance(user_id)
             credit_limit = get_user_credit_limit(user_id)
             
+            # 首页不再预加载订单数据，提高加载速度
             return render_template('index.html', 
-                                   orders=orders, 
-                                   prices=WEB_PRICES, 
-                                   plan_options=PLAN_OPTIONS,
-                                   username=session.get('username'),
-                                   is_admin=session.get('is_admin'),
-                                   balance=balance,
-                                   credit_limit=credit_limit)
+                                  prices=WEB_PRICES, 
+                                  plan_options=PLAN_OPTIONS,
+                                  username=session.get('username'),
+                                  is_admin=session.get('is_admin'),
+                                  balance=balance,
+                                  credit_limit=credit_limit,
+                                  emergency_mode=emergency_mode)
         except Exception as e:
-            logger.error(f"获取订单失败: {str(e)}", exc_info=True)
-            return render_template('index.html', 
-                                   error='获取订单失败', 
-                                   prices=WEB_PRICES, 
-                                   plan_options=PLAN_OPTIONS,
-                                   username=session.get('username'),
-                                   is_admin=session.get('is_admin'))
+            logger.error(f"首页加载失败: {str(e)}", exc_info=True)
+            return render_template('error.html', 
+                                  error='页面加载失败，请刷新重试', 
+                                  details=str(e),
+                                  username=session.get('username'))
 
     @app.route('/', methods=['POST'])
     @login_required
@@ -456,19 +484,21 @@ def register_routes(app, notification_queue):
 
     @app.route('/orders/recent')
     @login_required
+    @cache_for_seconds(5)  # 缓存5秒
     def orders_recent():
         """获取用户最近的订单"""
         try:
             # 获取查询参数
-            limit = int(request.args.get('limit', 20))  # 减少默认返回数量
+            limit = int(request.args.get('limit', 5))  # 默认只获取5条，减少初始负载
             offset = int(request.args.get('offset', 0))
             page = int(request.args.get('page', 1))
-            per_page = int(request.args.get('per_page', 10))  # 每页显示数量
+            per_page = int(request.args.get('per_page', 5))  # 每页5条
             if page > 1:
                 offset = (page - 1) * per_page
                 limit = per_page
             
-            # 获取简要信息还是详细信息
+            # 轻量模式 - 默认不获取详细信息，只获取最基本字段
+            lightweight = request.args.get('lightweight', 'true').lower() == 'true'
             detailed = request.args.get('detailed', 'false').lower() == 'true'
             
             # 获取指定ID的订单详情
@@ -481,7 +511,7 @@ def register_routes(app, notification_queue):
                     logger.warning(f"无效的订单ID列表: {ids_param}")
             
             # 记录请求参数
-            logger.info(f"获取订单请求: limit={limit}, offset={offset}, page={page}, detailed={detailed}, ids={order_ids}")
+            logger.info(f"获取订单请求: lightweight={lightweight}, limit={limit}, page={page}, detailed={detailed}, ids={order_ids}")
             
             # 构建查询条件
             user_filter = ""
@@ -498,14 +528,19 @@ def register_routes(app, notification_queue):
                 id_placeholders = ','.join(['?'] * len(order_ids))
                 where_clauses.append(f"id IN ({id_placeholders})")
                 params.extend(order_ids)
-                detailed = True  # 指定ID时总是获取详细信息
+                lightweight = False  # 指定ID时获取所有字段
             
             # 组合WHERE子句
             if where_clauses:
                 user_filter = "WHERE " + " AND ".join(where_clauses)
             
-            # 根据是否需要详细信息选择查询字段
-            fields = "id, status, created_at, accepted_by, remark" if not detailed else "id, account, password, package, status, created_at, accepted_at, completed_at, remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name"
+            # 根据模式选择查询字段
+            if lightweight and not detailed:
+                fields = "id, status, created_at"  # 超轻量模式，只要最基本字段
+            elif not detailed:
+                fields = "id, status, created_at, accepted_by, remark"  # 轻量模式
+            else:
+                fields = "id, account, password, package, status, created_at, accepted_at, completed_at, remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name"
             
             # 查询订单
             query = f"""
@@ -519,10 +554,40 @@ def register_routes(app, notification_queue):
                 query += " ORDER BY id DESC LIMIT ? OFFSET ?"
                 params.extend([limit, offset])
             
+            # 执行查询，添加超时控制
+            start_time = time.time()
             orders = execute_query(query, params, fetch=True)
+            query_time = time.time() - start_time
+            logger.info(f"订单查询耗时: {query_time:.2f}秒，返回 {len(orders)} 条记录")
             
-            logger.info(f"查询到 {len(orders)} 条订单记录")
+            # 如果是超轻量模式，简化响应
+            if lightweight and not detailed and not order_ids:
+                # 仅返回订单状态和ID
+                formatted_orders = []
+                for order in orders:
+                    if len(order) >= 3:  # 确保有足够的字段
+                        oid, status, created_at = order[:3]
+                        order_data = {
+                            "id": oid,
+                            "status": status,
+                            "status_text": STATUS_TEXT_ZH.get(status, status),
+                            "created_at": created_at
+                        }
+                        formatted_orders.append(order_data)
+                
+                # 不计算总数，直接返回初步数据以加快速度
+                return jsonify({
+                    "orders": formatted_orders,
+                    "pagination": {
+                        "page": page,
+                        "per_page": per_page,
+                        "more_available": len(orders) == limit
+                    },
+                    "query_time": f"{query_time:.2f}s",
+                    "mode": "lightweight"
+                })
             
+            # 对于正常模式，计算总数并返回完整分页信息
             # 如果不是按ID查询，则获取总订单数（用于分页）
             total_count = 0
             if not order_ids:
@@ -540,15 +605,20 @@ def register_routes(app, notification_queue):
             for order in orders:
                 if not detailed:
                     # 简要信息
-                    oid, status, created_at, accepted_by, remark = order
-                    order_data = {
-                        "id": oid,
-                        "status": status,
-                        "status_text": STATUS_TEXT_ZH.get(status, status),
-                        "created_at": created_at,
-                        "accepted_by": get_seller_display_name(accepted_by) if accepted_by else "",
-                        "remark": remark or ""
-                    }
+                    if len(order) >= 4:  # 确保有足够的字段
+                        oid, status, created_at = order[:3]
+                        accepted_by = order[3] if len(order) > 3 else None
+                        remark = order[4] if len(order) > 4 else None
+                        
+                        order_data = {
+                            "id": oid,
+                            "status": status,
+                            "status_text": STATUS_TEXT_ZH.get(status, status),
+                            "created_at": created_at,
+                            "accepted_by": get_seller_display_name(accepted_by) if accepted_by else "",
+                            "remark": remark or ""
+                        }
+                        formatted_orders.append(order_data)
                 else:
                     # 详细信息
                     oid, account, password, package, status, created_at, accepted_at, completed_at, remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name = order
@@ -576,8 +646,7 @@ def register_routes(app, notification_queue):
                         "can_cancel": status == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == user_id),
                         "creator": web_user_id or ""
                     }
-                
-                formatted_orders.append(order_data)
+                    formatted_orders.append(order_data)
             
             # 返回订单数据和分页信息
             response_data = {
@@ -587,7 +656,8 @@ def register_routes(app, notification_queue):
                     "page": page if not order_ids else 1,
                     "per_page": per_page if not order_ids else total_count,
                     "pages": (total_count + per_page - 1) // per_page if not order_ids else 1
-                }
+                },
+                "query_time": f"{query_time:.2f}s"
             }
             
             logger.info(f"返回订单数据: {len(formatted_orders)} 条，总数: {total_count}")
@@ -595,7 +665,11 @@ def register_routes(app, notification_queue):
         
         except Exception as e:
             logger.error(f"获取订单列表时出错: {str(e)}", exc_info=True)
-            return jsonify({"error": f"获取订单数据失败: {str(e)}"}), 500
+            return jsonify({
+                "error": f"获取订单数据失败: {str(e)}",
+                "orders": [],
+                "pagination": {"total": 0, "page": 1, "per_page": 5, "pages": 0}
+            }), 500
 
     @app.route('/orders/cancel/<int:oid>', methods=['POST'])
     @login_required

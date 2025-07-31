@@ -131,6 +131,45 @@ def check_directories():
     except Exception as e:
         logger.error(f"检查目录结构时发生错误: {str(e)}", exc_info=True)
 
+# 启动缓存预热器
+def start_cache_warmer_if_enabled():
+    """如果启用了缓存预热，则启动预热器"""
+    try:
+        # 导入缓存预热器
+        from modules.cache_warmer import start_cache_warmer
+        
+        # 判断是否启用
+        import os
+        enabled = os.getenv('CACHE_WARMER_ENABLED', 'True').lower() == 'true'
+        
+        if enabled:
+            logger.info("启动缓存预热器...")
+            start_cache_warmer()
+            logger.info("缓存预热器已启动")
+    except ImportError:
+        logger.warning("缓存预热器模块不可用")
+    except Exception as e:
+        logger.error(f"启动缓存预热器时出错: {str(e)}")
+
+# 应用启动完成后的操作
+@app.before_first_request
+def on_startup():
+    # 检查必要的目录
+    check_directories()
+    # 启动缓存预热器
+    start_cache_warmer_if_enabled()
+    logger.info("应用初始化完成")
+
+# 添加紧急模式参数到模板上下文
+@app.context_processor
+def inject_emergency_mode():
+    """在所有模板中注入紧急模式标志"""
+    import os
+    emergency_mode = os.getenv('EMERGENCY_MODE', 'false').lower() == 'true'
+    return {
+        'emergency_mode': emergency_mode
+    }
+
 # 添加调试路由
 @app.route('/debug/dirs')
 def debug_dirs():
@@ -359,6 +398,17 @@ if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_bot, args=(notification_queue,), daemon=True)
     bot_thread.start()
     logger.info("Telegram机器人线程已启动")
+    
+    # 启用紧急模式
+    os.environ['EMERGENCY_MODE'] = 'true'
+    # 启用缓存预热器
+    os.environ['CACHE_WARMER_ENABLED'] = 'true'
+    # 设置缓存预热间隔
+    os.environ['WARM_INTERVAL'] = '120'
+    
+    # 设置线程数
+    import threading
+    logger.info(f"启动时活跃线程数: {threading.active_count()}")
     
     # 启动 Flask
     port = int(os.environ.get("PORT", 5000))

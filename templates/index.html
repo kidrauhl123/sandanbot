@@ -1415,9 +1415,11 @@
   let lastOrdersHash = ''; // 用于检测订单变化的哈希
   let viewMode = 'table'; // 默认视图模式：grid 或 table
   let currentPage = 1; // 当前页码
-  let perPage = 10; // 每页显示的订单数量
+  let perPage = 5; // 每页显示的订单数量，改为5条
   let totalOrders = 0; // 订单总数
   let isLoading = false; // 是否正在加载中
+  let loadAttempts = 0; // 加载尝试次数
+  let isEmergencyMode = {{ 'true' if emergency_mode|default(false) else 'false' }}; // 紧急模式标志
   
   // 订单页面对象
   const orderPages = {};
@@ -1852,11 +1854,15 @@
       if (searchKeyword) {
         const filteredOrders = allOrders.filter(order => 
           order.id.toString().includes(searchKeyword) || 
-          order.account.toLowerCase().includes(searchKeyword.toLowerCase())
+          (order.account && order.account.toLowerCase().includes(searchKeyword.toLowerCase()))
         );
         renderOrders(filteredOrders);
       } else {
-        renderOrders(allOrders);
+        if (orderPages[currentPage]) {
+          renderOrders(orderPages[currentPage]);
+        } else {
+          loadOrders(false, 1, true);
+        }
       }
     });
     
@@ -1872,7 +1878,11 @@
       searchInput.value = '';
       searchKeyword = '';
       displayedOrders = 5;
-      renderOrders(allOrders);
+      if (orderPages[currentPage]) {
+        renderOrders(orderPages[currentPage]);
+      } else {
+        loadOrders(false, 1, true);
+      }
     });
     
     // 套餐选择处理
@@ -1887,8 +1897,10 @@
       selectedPrice.textContent = USER_PRICES[this.value];
     });
     
-    // 加载订单
-    loadOrders();
+    // 加载订单 - 延迟200ms加载，让页面其他部分先渲染
+    setTimeout(() => {
+      loadOrders();
+    }, 200);
     
     // 启动自动刷新
     startAutoRefresh();
@@ -2172,11 +2184,17 @@
     
     try {
       isLoading = true;
+      loadAttempts++;
+      
       const indicator = document.getElementById('refreshIndicator');
       const ordersContainer = document.getElementById('orders-container');
       
       if (!isAutoRefresh) {
-        ordersContainer.innerHTML = '<div style="text-align:center;padding:20px;">加载订单中，请稍候...</div>';
+        let loadingText = '加载订单中，请稍候...';
+        if (loadAttempts > 1) {
+          loadingText = `正在加载(第${loadAttempts}次尝试)，请耐心等待...`;
+        }
+        ordersContainer.innerHTML = `<div style="text-align:center;padding:20px;">${loadingText}</div>`;
         indicator.textContent = "正在加载...";
         indicator.classList.add('show');
       }
@@ -2190,14 +2208,24 @@
         return;
       }
       
-      // 构建请求参数
+      // 设置请求超时
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+      
+      // 构建请求参数 - 使用极简模式加速初次加载
       const params = new URLSearchParams({
         page: page,
         per_page: perPage,
-        detailed: 'false' // 减少数据传输量
+        lightweight: isEmergencyMode || page === 1 ? 'true' : 'false', // 首页使用极简模式
+        detailed: 'false'
       });
       
-      const response = await fetch(`/orders/recent?${params}`);
+      console.log(`正在加载订单，页码：${page}，模式：${isEmergencyMode ? '紧急' : '正常'}`);
+      
+      const response = await fetch(`/orders/recent?${params}`, {
+        signal: controller.signal,
+        headers: { 'Cache-Control': 'no-cache' }
+      }).finally(() => clearTimeout(timeoutId));
       
       // 检查响应状态
       if (!response.ok) {
@@ -2205,6 +2233,7 @@
       }
       
       const data = await response.json();
+      console.log(`订单加载完成，查询时间：${data.query_time || 'N/A'}`);
       
       // 检查返回的数据是否为错误消息
       if (data && data.error) {
@@ -2212,13 +2241,15 @@
       }
       
       // 检查是否返回了有效的数据结构
-      if (!data || !data.orders || !Array.isArray(data.orders)) {
+      if (!data || !data.orders) {
         throw new Error('服务器返回了无效的数据格式');
       }
       
       // 更新状态
       currentPage = page;
-      totalOrders = data.pagination.total;
+      if (data.pagination && data.pagination.total) {
+        totalOrders = data.pagination.total;
+      }
       
       // 缓存当前页的数据
       orderPages[page] = data.orders;
@@ -2232,11 +2263,25 @@
       renderOrders(data.orders);
       
       // 更新分页
-      updatePagination(currentPage, data.pagination.pages, totalOrders);
+      if (data.pagination) {
+        if (data.pagination.total) {
+          updatePagination(currentPage, Math.ceil(data.pagination.total / perPage), data.pagination.total);
+        } else if (data.pagination.more_available !== undefined) {
+          // 轻量模式下使用简化分页
+          updateSimplePagination(currentPage, data.pagination.more_available);
+        }
+      }
       
       // 更新今日总额 (只有当加载第一页时)
       if (page === 1) {
         updateTodayTotal(data.orders);
+      }
+      
+      // 如果是极简模式下的首页，加载完基本数据后，立即异步加载详细数据
+      if (isEmergencyMode && page === 1 && data.orders.length > 0) {
+        setTimeout(() => {
+          loadOrderDetails(data.orders);
+        }, 200);
       }
       
       // 显示自动刷新提示
@@ -2247,31 +2292,212 @@
           indicator.classList.remove('show');
         }, 1500);
       }
+      
+      // 重置加载尝试次数
+      loadAttempts = 0;
+      
     } catch (error) {
       console.error('加载订单失败:', error);
       const ordersContainer = document.getElementById('orders-container');
       if (ordersContainer) {
+        // 根据尝试次数显示不同的错误信息
+        let errorMessage = `加载订单失败: ${error.message}`;
+        let retryDelay = 5000; // 默认5秒重试
+        
+        if (error.name === 'AbortError') {
+          errorMessage = '加载超时，服务器响应时间过长';
+          retryDelay = 8000; // 超时情况下等待更长时间
+        }
+        
+        if (loadAttempts >= 3) {
+          errorMessage += '<br><small>已多次尝试，请检查网络连接或联系管理员</small>';
+          retryDelay = 10000; // 多次失败时等待更长时间
+        }
+        
         ordersContainer.innerHTML = `
           <div style="text-align:center;padding:20px;color:#e53e3e;">
             <div style="margin-bottom:10px;"><i class="fas fa-exclamation-circle" style="font-size:24px;"></i></div>
-            <div>加载订单失败: ${error.message}</div>
+            <div>${errorMessage}</div>
             <button onclick="loadOrders(false, ${currentPage}, true)" style="margin-top:15px;padding:8px 16px;background:#4299e1;color:white;border:none;border-radius:4px;cursor:pointer;">
-              <i class="fas fa-sync-alt"></i> 重试
+              <i class="fas fa-sync-alt"></i> 立即重试
             </button>
           </div>
         `;
       }
       
-      // 5秒后自动重试
-      if (!isAutoRefresh) {
+      // 自动重试，根据尝试次数增加延迟
+      if (loadAttempts < 5) { // 最多尝试5次
         setTimeout(() => {
           loadOrders(true, currentPage, true);
-        }, 5000);
+        }, retryDelay);
       }
     } finally {
       isLoading = false;
       hideLoadingIndicator();
     }
+  }
+  
+  // 更新简化分页控件（轻量模式下使用）
+  function updateSimplePagination(currentPage, moreAvailable) {
+    const loadMoreContainer = document.getElementById('load-more-container');
+    if (!loadMoreContainer) return;
+    
+    if (!moreAvailable) {
+      loadMoreContainer.style.display = 'none';
+      return;
+    }
+    
+    // 创建简化分页控件
+    let paginationHtml = `
+      <div class="pagination">
+        <div class="page-buttons">
+          <button onclick="goToPage(${currentPage + 1})" class="pagination-btn">
+            加载更多... <i class="fas fa-arrow-down"></i>
+          </button>
+        </div>
+      </div>
+    `;
+    
+    loadMoreContainer.innerHTML = paginationHtml;
+    loadMoreContainer.style.display = 'block';
+  }
+
+  // 隐藏加载指示器
+  function hideLoadingIndicator() {
+    const indicator = document.getElementById('refreshIndicator');
+    setTimeout(() => {
+      indicator.classList.remove('show');
+    }, 1000);
+  }
+
+  // 渲染订单
+  function renderOrders(orders) {
+    const container = document.getElementById('orders-container');
+    if (!container) return;
+    
+    // 显示订单区域
+    if (!orders || !orders.length) {
+      container.innerHTML = '<div class="no-results">暂无订单</div>';
+      const loadMoreContainer = document.getElementById('load-more-container');
+      if (loadMoreContainer) {
+        loadMoreContainer.style.display = 'none';
+      }
+      return;
+    }
+    
+    // 根据视图模式显示订单
+    if (viewMode === 'grid') {
+      renderGridView(container, orders);
+    } else {
+      renderTableView(container, orders);
+    }
+    
+    // 只有在需要时才加载详细信息
+    if (!isEmergencyMode) {
+      setTimeout(() => {
+        if (orders.length > 0) {
+          loadOrderDetails(orders);
+        }
+      }, 100);
+    }
+  }
+  
+  // 延迟加载订单详细信息
+  async function loadOrderDetails(orders) {
+    try {
+      // 如果没有订单或订单已经有详细信息，则跳过
+      if (!orders || orders.length === 0 || (orders[0].account && orders[0].password)) {
+        return;
+      }
+      
+      const orderIds = orders.map(order => order.id).join(',');
+      console.log(`加载${orders.length}个订单的详细信息...`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      
+      const response = await fetch(`/orders/recent?detailed=true&ids=${orderIds}`, {
+        signal: controller.signal
+      }).finally(() => clearTimeout(timeoutId));
+      
+      if (!response.ok) return;
+      
+      const data = await response.json();
+      if (!data || !data.orders) return;
+      
+      // 使用详细信息更新订单
+      data.orders.forEach(detailedOrder => {
+        // 更新缓存中的数据
+        for (const page in orderPages) {
+          const pageOrders = orderPages[page];
+          const orderIndex = pageOrders.findIndex(o => o.id === detailedOrder.id);
+          if (orderIndex !== -1) {
+            orderPages[page][orderIndex] = detailedOrder;
+          }
+        }
+        
+        // 如果是当前页的订单，更新UI
+        if (currentPage === 1 || orderPages[currentPage].some(o => o.id === detailedOrder.id)) {
+          // 找到对应的订单元素并更新
+          const orderElements = document.querySelectorAll(`[data-order-id="${detailedOrder.id}"]`);
+          if (orderElements.length === 0) return;
+          
+          orderElements.forEach(element => {
+            // 根据订单类型更新不同的详情
+            if (element.tagName === 'TR') { // 表格视图
+              const remarkCell = element.querySelector('.remark-cell .remark-text');
+              if (remarkCell && detailedOrder.remark) {
+                remarkCell.textContent = detailedOrder.remark;
+              }
+              
+              // 更新账号密码
+              const accountCell = element.querySelector('.account-cell');
+              if (accountCell && detailedOrder.account) {
+                if (detailedOrder.account.includes('uploads')) {
+                  accountCell.innerHTML = `<a href="/${detailedOrder.account}" target="_blank">查看二维码</a>`;
+                } else {
+                  accountCell.textContent = detailedOrder.account;
+                }
+              }
+              
+              // 更新接单人
+              const sellerCell = element.querySelector('.seller-cell');
+              if (sellerCell && detailedOrder.accepted_by) {
+                sellerCell.textContent = detailedOrder.accepted_by;
+              }
+            } else { // 网格视图
+              const remarkP = element.querySelector('.remark strong:last-child');
+              if (remarkP && detailedOrder.remark) {
+                remarkP.textContent = detailedOrder.remark;
+              }
+              
+              // 更新账号信息
+              const accountP = element.querySelector('.account strong:last-child');
+              if (accountP && detailedOrder.account) {
+                if (detailedOrder.account.includes('uploads')) {
+                  accountP.innerHTML = `<a href="/${detailedOrder.account}" target="_blank">查看二维码</a>`;
+                } else {
+                  accountP.textContent = detailedOrder.account;
+                }
+              }
+            }
+          });
+        }
+      });
+      
+      console.log(`订单详情加载完成`);
+      
+    } catch (e) {
+      console.error('获取订单详情时出错:', e);
+    }
+  }
+  
+  // 跳转到指定页
+  function goToPage(page) {
+    if (page < 1 || (totalOrders > 0 && page > Math.ceil(totalOrders / perPage))) return;
+    if (isLoading) return;
+    
+    loadOrders(false, page);
   }
   
   // 更新分页控件
@@ -2301,107 +2527,78 @@
     loadMoreContainer.style.display = 'block';
   }
   
-  // 跳转到指定页
-  function goToPage(page) {
-    if (page < 1 || page > Math.ceil(totalOrders / perPage)) return;
-    if (isLoading) return;
-    
-    loadOrders(false, page);
-  }
-  
-  // 加载更多订单 - 不再需要，使用分页替代
-  function loadMoreOrders() {
-    goToPage(currentPage + 1);
-  }
-
-  // 隐藏加载指示器
-  function hideLoadingIndicator() {
-    const indicator = document.getElementById('refreshIndicator');
-    setTimeout(() => {
-      indicator.classList.remove('show');
-    }, 1000);
-  }
-
-  // 渲染订单
-  function renderOrders(orders) {
-    const container = document.getElementById('orders-container');
-    if (!container) return;
-    
-    // 显示订单区域
-    if (!orders.length) {
-      container.innerHTML = '<div class="no-results">暂无订单</div>';
-      document.getElementById('load-more-container').style.display = 'none';
-      return;
-    }
-    
-    // 根据视图模式显示订单
-    if (viewMode === 'grid') {
-      renderGridView(container, orders);
-    } else {
-      renderTableView(container, orders);
-    }
-    
-    // 延迟加载单个订单的详细信息
-    setTimeout(() => {
-      if (orders.length > 0) {
-        loadOrderDetails(orders);
-      }
-    }, 100);
-  }
-  
-  // 延迟加载订单详细信息
-  async function loadOrderDetails(orders) {
-    try {
-      const orderIds = orders.map(order => order.id).join(',');
-      const response = await fetch(`/orders/recent?detailed=true&ids=${orderIds}`);
-      
-      if (!response.ok) return;
-      
-      const data = await response.json();
-      if (!data || !data.orders || !Array.isArray(data.orders)) return;
-      
-      // 使用详细信息更新订单
-      data.orders.forEach(detailedOrder => {
-        // 找到对应的订单元素并更新
-        const orderElements = document.querySelectorAll(`[data-order-id="${detailedOrder.id}"]`);
-        if (orderElements.length === 0) return;
-        
-        orderElements.forEach(element => {
-          // 根据订单类型更新不同的详情
-          if (element.tagName === 'TR') { // 表格视图
-            const remarkCell = element.querySelector('.remark-cell .remark-text');
-            if (remarkCell && detailedOrder.remark) {
-              remarkCell.textContent = detailedOrder.remark;
-            }
-          } else { // 网格视图
-            const remarkP = element.querySelector('.remark strong:last-child');
-            if (remarkP && detailedOrder.remark) {
-              remarkP.textContent = detailedOrder.remark;
-            }
-          }
-        });
-      });
-      
-    } catch (e) {
-      console.error('获取订单详情时出错:', e);
-    }
-  }
-
-  // 自动刷新管理
+  // 自动刷新
   function startAutoRefresh() {
-    stopAutoRefresh(); // 先停止现有的
+    // 先清除之前的定时器
+    if (autoRefreshInterval) {
+      clearInterval(autoRefreshInterval);
+    }
+    
+    // 设置新的定时器，每15秒自动刷新一次（改为15秒，减轻服务器负担）
     autoRefreshInterval = setInterval(() => {
-      // 只刷新当前页面
-      loadOrders(true, currentPage, true);
-    }, 10000); // 10秒刷新一次，减轻服务器负担
+      if (document.visibilityState === 'visible' && !isLoading) { 
+        loadOrders(true, currentPage);
+      }
+    }, 15000);
   }
-
+  
+  // 停止自动刷新
   function stopAutoRefresh() {
     if (autoRefreshInterval) {
       clearInterval(autoRefreshInterval);
       autoRefreshInterval = null;
     }
   }
+  
+  // 页面加载处理
+  document.addEventListener('DOMContentLoaded', function() {
+    // 初始化图片上传功能
+    initImageUpload();
+    
+    // 加载用户定制价格
+    loadUserPrices();
+    
+    // 加载活跃卖家列表
+    loadActiveSellers();
+    
+    // 紧急模式提示
+    if (isEmergencyMode) {
+      showEmergencyModeNotice();
+    }
+    
+    // 搜索功能初始化
+    const searchInput = document.getElementById('searchInput');
+    const searchBtn = document.getElementById('searchBtn');
+    const clearSearchBtn = document.getElementById('clearSearchBtn');
+    
+    // 搜索按钮点击事件
+    searchBtn.addEventListener('click', function() {
+      searchKeyword = searchInput.value.trim();
+      displayedOrders = 5; // 重置显示数量
+      
+      if (searchKeyword) {
+        const filteredOrders = allOrders.filter(order => 
+          order.id.toString().includes(searchKeyword) || 
+          (order.account && order.account.toLowerCase().includes(searchKeyword.toLowerCase()))
+        );
+        renderOrders(filteredOrders);
+      } else {
+        if (orderPages[currentPage]) {
+          renderOrders(orderPages[currentPage]);
+        } else {
+          loadOrders(false, 1, true);
+        }
+      }
+    });
+    
+    // 加载订单 - 延迟200ms加载，让页面其他部分先渲染
+    setTimeout(() => {
+      loadOrders();
+    }, 200);
+    
+    // 启动自动刷新
+    startAutoRefresh();
+  });
 
   // 页面可见性改变时的处理
   document.addEventListener('visibilitychange', function() {
@@ -2411,6 +2608,101 @@
       startAutoRefresh();
     }
   });
+
+  // 显示紧急模式通知
+  function showEmergencyModeNotice() {
+    const notice = document.createElement('div');
+    notice.className = 'emergency-mode-notice';
+    notice.innerHTML = `
+      <div class="emergency-mode-content">
+        <div class="emergency-mode-icon">
+          <i class="fas fa-bolt"></i>
+        </div>
+        <div class="emergency-mode-text">
+          <strong>极速模式已启用</strong>
+          <span>系统正在使用极速加载模式，提升页面响应速度</span>
+        </div>
+        <div class="emergency-mode-close" onclick="this.parentElement.parentElement.remove()">
+          <i class="fas fa-times"></i>
+        </div>
+      </div>
+    `;
+    
+    // 添加样式
+    const style = document.createElement('style');
+    style.textContent = `
+      .emergency-mode-notice {
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        z-index: 1000;
+        max-width: 300px;
+        background: linear-gradient(135deg, #4a6cf7, #3b55e6);
+        color: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(59, 85, 230, 0.3);
+        opacity: 0;
+        transform: translateY(20px);
+        transition: opacity 0.5s ease, transform 0.5s ease;
+        animation: fadeInUp 0.5s forwards;
+      }
+      
+      @keyframes fadeInUp {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      
+      .emergency-mode-content {
+        display: flex;
+        padding: 15px;
+        align-items: center;
+      }
+      
+      .emergency-mode-icon {
+        margin-right: 12px;
+        font-size: 20px;
+      }
+      
+      .emergency-mode-text {
+        flex: 1;
+      }
+      
+      .emergency-mode-text strong {
+        display: block;
+        margin-bottom: 5px;
+      }
+      
+      .emergency-mode-text span {
+        font-size: 12px;
+        opacity: 0.9;
+      }
+      
+      .emergency-mode-close {
+        margin-left: 10px;
+        cursor: pointer;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+      }
+      
+      .emergency-mode-close:hover {
+        opacity: 1;
+      }
+    `;
+    
+    document.head.appendChild(style);
+    document.body.appendChild(notice);
+    
+    // 8秒后自动隐藏
+    setTimeout(() => {
+      if (notice.parentNode) {
+        notice.style.opacity = '0';
+        notice.style.transform = 'translateY(20px)';
+        setTimeout(() => notice.remove(), 500);
+      }
+    }, 8000);
+  }
 
   // 切换视图模式
   function toggleViewMode(mode) {
@@ -2473,147 +2765,6 @@
       console.error('确认订单失败', e);
       alert('确认失败，请重试');
     }
-  }
-
-  // 隐藏加载指示器
-  function hideLoadingIndicator() {
-    const indicator = document.getElementById('refreshIndicator');
-    setTimeout(() => {
-      indicator.classList.remove('show');
-    }, 1000);
-  }
-
-  // 渲染网格视图
-  function renderGridView(gridContainer, orders) {
-    gridContainer.innerHTML = '';
-    
-    // 如果没有订单，显示提示
-    if (orders.length === 0) {
-      gridContainer.innerHTML = '<div class="no-results">暂无订单</div>';
-      return;
-    }
-    
-    orders.forEach(o => {
-      const cls = 'status-' + o.status.replace('已','').toLowerCase();
-      
-      const html = `
-        <div class="order-list-item" data-order-id="${o.id}">
-          <h4>订单 #${o.id} <span class="status-badge ${cls}">${o.status_text}</span></h4>
-          ${isAdmin && o.accepted_by ? `<p class="creator">接单者：${escapeHtml(o.accepted_by)}</p>` : ''}
-          <p class="account"><strong>YouTube：</strong>${o.account ? (o.account.includes('uploads') ? `<a href="/${o.account}" target="_blank">查看二维码</a>` : '未上传二维码') : '未上传二维码'}</p>
-          ${o.remark ? `<p class="remark"><strong>备注：</strong><strong>${escapeHtml(o.remark)}</strong></p>` : '<p class="remark"><strong>备注：</strong><strong></strong></p>'}
-          <div class="time-info">
-            <p class="time">提交时间：${formatDateTime(o.created_at)}</p>
-            ${o.completed_at ? `<p class="time">完成时间：${formatDateTime(o.completed_at)}</p>` : ''}
-          </div>
-          ${o.status === 'accepted' || o.status === 'submitted' ? `<button class="confirm-btn" onclick="confirmOrder(${o.id})">确认</button>` : ''}
-          <button class="detail-btn" onclick="showOrderDetail(${o.id})">详情</button>
-        </div>`;
-      gridContainer.insertAdjacentHTML('beforeend', html);
-    });
-  }
-  
-  // 渲染表格视图
-  function renderTableView(container, orders) {
-    let html = `
-      <table class="orders-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>YouTube</th>
-            <th>状态</th>
-            <th>备注</th>
-            <th>接单者</th>
-            <th>提交时间</th>
-            <th>完成时间</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-    `;
-    
-    orders.forEach(o => {
-      const cls = 'status-' + o.status.replace('已','').toLowerCase();
-      
-      html += `
-        <tr data-order-id="${o.id}">
-          <td>${o.id}</td>
-          <td>${o.account ? (o.account.includes('uploads') ? `<a href="/${o.account}" target="_blank">查看二维码</a>` : '未上传二维码') : '未上传二维码'}</td>
-          <td><span class="status-badge ${cls}">${o.status_text}</span></td>
-          <td class="remark-cell" data-order-id="${o.id}">
-            <span class="remark-text">${escapeHtml(o.remark || '')}</span>
-            <i class="fas fa-pen remark-edit-icon" style="display:none;margin-left:8px;cursor:pointer;color:#667eea;" onclick="editRemark(${o.id}, '${escapeHtml(o.remark || '').replace(/'/g, "\\'")}')"></i>
-          </td>
-          <td>${o.accepted_by || '-'}</td>
-          <td>${formatDateTime(o.created_at)}</td>
-          <td>${o.completed_at ? formatDateTime(o.completed_at) : '-'}</td>
-          <td>
-            <button class="detail-btn" onclick="showOrderDetail(${o.id})">详情</button>
-            ${(o.status === 'accepted' || o.status === 'submitted') ? `<button class="confirm-btn" onclick="confirmOrder(${o.id})">确认</button>` : ''}
-          </td>
-        </tr>
-      `;
-    });
-    
-    html += `
-        </tbody>
-      </table>
-    `;
-    
-    container.innerHTML = html;
-  }
-
-  // HTML转义函数
-  function escapeHtml(unsafe) {
-    if (!unsafe) return '';
-    return unsafe
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-  // 显示订单详情
-  function showOrderDetail(orderId) {
-    // 先从已加载的订单数据中找
-    let order = null;
-    
-    // 检查当前页的订单
-    if (orderPages[currentPage]) {
-      order = orderPages[currentPage].find(o => o.id === orderId);
-    }
-    
-    // 如果没找到，在全局数据中再找一次
-    if (!order && allOrders.length > 0) {
-      order = allOrders.find(o => o.id === orderId);
-    }
-    
-    if (!order) return;
-    
-    // 构建详细信息
-    let detailMessage = `订单 #${orderId} 详情\n\n`;
-    detailMessage += `状态: ${order.status_text}\n`;
-    detailMessage += `提交时间: ${formatDateTime(order.created_at)}\n`;
-    
-    if (order.account) {
-      detailMessage += `YouTube: ${order.account.includes('uploads') ? '已上传二维码' : '未上传二维码'}\n`;
-    }
-    
-    if (order.completed_at) {
-      detailMessage += `完成时间: ${formatDateTime(order.completed_at)}\n`;
-    }
-    
-    if (order.remark) {
-      detailMessage += `备注: ${order.remark}\n`;
-    }
-    
-    // 只有管理员可以看到接单人
-    if (isAdmin && order.accepted_by) {
-      detailMessage += `接单人: ${order.accepted_by}\n`;
-    }
-    
-    alert(detailMessage);
   }
 
   // 质疑订单（当订单显示充值成功但实际未成功时）
