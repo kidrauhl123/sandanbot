@@ -52,35 +52,45 @@ def login_required(f):
     return decorated_function
 
 # ===== Web路由 =====
+# 卖家昵称缓存，避免重复查询数据库
+seller_name_cache = {}
+
 def get_seller_display_name(accepted_by):
-    """获取卖家的显示昵称"""
+    """获取卖家的显示昵称，使用缓存减少数据库查询"""
     if not accepted_by:
         return ""
+    
+    # 检查缓存
+    if accepted_by in seller_name_cache:
+        return seller_name_cache[accepted_by]
     
     try:
         # 使用占位符，区分PostgreSQL和SQLite
         if DATABASE_URL.startswith('postgres'):
-            seller_info = execute_query("SELECT nickname FROM sellers WHERE telegram_id = %s", (accepted_by,), fetch=True)
+            seller_info = execute_query("SELECT nickname, first_name, username FROM sellers WHERE telegram_id = %s", (accepted_by,), fetch=True)
         else:
-            seller_info = execute_query("SELECT nickname FROM sellers WHERE telegram_id = ?", (accepted_by,), fetch=True)
+            seller_info = execute_query("SELECT nickname, first_name, username FROM sellers WHERE telegram_id = ?", (accepted_by,), fetch=True)
             
-        if seller_info and seller_info[0] and seller_info[0][0]:
-            return seller_info[0][0]
+        if not seller_info or not seller_info[0]:
+            display_name = f"卖家 {accepted_by}"
+            seller_name_cache[accepted_by] = display_name
+            return display_name
+            
+        # 优先使用昵称，其次使用first_name，再次使用username
+        nickname, first_name, username = seller_info[0]
         
-        # 如果没有设置昵称，尝试使用first_name或username
-        if DATABASE_URL.startswith('postgres'):
-            seller_name = execute_query("SELECT first_name, username FROM sellers WHERE telegram_id = %s", (accepted_by,), fetch=True)
+        if nickname:
+            display_name = nickname
+        elif first_name:
+            display_name = first_name
+        elif username:
+            display_name = username
         else:
-            seller_name = execute_query("SELECT first_name, username FROM sellers WHERE telegram_id = ?", (accepted_by,), fetch=True)
-            
-        if seller_name and seller_name[0]:
-            if seller_name[0][0]:  # 优先使用first_name
-                return seller_name[0][0]
-            elif seller_name[0][1]:  # 其次使用username
-                return seller_name[0][1]
+            display_name = f"卖家 {accepted_by}"
         
-        # 如果都没有，返回ID
-        return f"卖家 {accepted_by}"
+        # 保存到缓存
+        seller_name_cache[accepted_by] = display_name
+        return display_name
     except Exception as e:
         logger.error(f"获取卖家显示名称失败: {str(e)}", exc_info=True)
         return f"卖家 {accepted_by}"
@@ -484,7 +494,7 @@ def register_routes(app, notification_queue):
         """获取用户最近的订单"""
         try:
             # 获取查询参数
-            limit = int(request.args.get('limit', 1000))  # 增加默认值以支持加载更多订单
+            limit = min(int(request.args.get('limit', 50)), 100)  # 默认50条，最多100条
             offset = int(request.args.get('offset', 0))
             user_filter = ""
             params = []
@@ -494,10 +504,10 @@ def register_routes(app, notification_queue):
                 user_filter = "WHERE user_id = ?"
                 params.append(session.get('user_id'))
             
-            # 查询订单
+            # 优化查询 - 只选择首页需要显示的字段
+            # 注意：需要确保orders表有id, status, created_at的索引
             orders = execute_query(f"""
-                SELECT id, account, password, package, status, created_at, accepted_at, completed_at,
-                       remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name
+                SELECT id, account, package, status, created_at, accepted_by, remark
                 FROM orders 
                 {user_filter}
                 ORDER BY id DESC LIMIT ? OFFSET ?
@@ -509,37 +519,41 @@ def register_routes(app, notification_queue):
             formatted_orders = []
             for order in orders:
                 try:
-                    oid, account, password, package, status, created_at, accepted_at, completed_at, remark, web_user_id, user_id, accepted_by, accepted_by_username, accepted_by_first_name = order
+                    # 解包并提供默认值
+                    oid, account, package, status, created_at, accepted_by, remark = order + (None,) * (7 - len(order))
                     
-                    # 获取sellers表中的显示昵称
-                    seller_display = get_seller_display_name(accepted_by)
+                    # 获取sellers表中的显示昵称 - 使用缓存减少查询
+                    seller_display = ""
+                    if accepted_by:
+                        seller_display = get_seller_display_name(accepted_by)
                     
                     # 如果是失败状态，翻译失败原因
-                    translated_remark = remark
+                    translated_remark = remark or ""
                     if status == STATUS['FAILED'] and remark:
                         translated_remark = REASON_TEXT_ZH.get(remark, remark)
                     
                     order_data = {
                         "id": oid,
-                        "account": account,
-                        "password": password or "",
+                        "account": account or "",
                         "package": package or "",
                         "status": status or "unknown",
                         "status_text": STATUS_TEXT_ZH.get(status, status) if status else "未知",
                         "created_at": created_at or "",
-                        "accepted_at": accepted_at or "",
-                        "completed_at": completed_at or "",
-                        "remark": translated_remark or "",
-                        "accepted_by": seller_display or "",
-                        "can_cancel": status == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == user_id)
+                        "accepted_by": seller_display,
+                        "remark": translated_remark,
+                        "can_cancel": status == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == session.get('user_id'))
                     }
                     formatted_orders.append(order_data)
                 except Exception as e:
                     logger.error(f"处理订单数据时出错 (ID={order[0] if order and len(order) > 0 else 'unknown'}): {str(e)}", exc_info=True)
                     # 继续处理下一个订单，不中断整个循环
             
-            # 直接返回订单列表，而不是嵌套在orders字段中
-            return jsonify(formatted_orders)
+            # 创建响应，添加缓存控制头
+            response = jsonify(formatted_orders)
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
         except Exception as e:
             logger.error(f"获取最近订单失败: {str(e)}", exc_info=True)
             return jsonify({"error": "获取订单列表失败，请稍后再试"}), 500

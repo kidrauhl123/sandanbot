@@ -2079,17 +2079,34 @@
     }
   }
 
-  // 加载订单
+  // 加载订单数据
   async function loadOrders(isAutoRefresh = false) {
     try {
+      // 显示加载指示器
+      if (!isAutoRefresh) {
+        showLoadingIndicator();
+      }
+      
       const indicator = document.getElementById('refreshIndicator');
       if (!isAutoRefresh) {
         indicator.textContent = "正在加载...";
         indicator.classList.add('show');
       }
       
-      const response = await fetch('/orders/recent');
+      // 添加时间戳避免缓存，限制返回量
+      const timestamp = Date.now();
+      const response = await fetch(`/orders/recent?limit=50&t=${timestamp}`);
+      
+      if (!response.ok) {
+        throw new Error(`API响应错误: ${response.status}`);
+      }
+      
       const orders = await response.json();
+      
+      // 检查API错误
+      if (orders && orders.error) {
+        throw new Error(orders.error);
+      }
       
       // 生成并比较哈希，检测是否有变化
       const newHash = generateOrdersHash(orders);
@@ -2109,15 +2126,17 @@
       if (searchKeyword) {
         filteredOrders = orders.filter(order => 
           order.id.toString().includes(searchKeyword) || 
-          order.account.toLowerCase().includes(searchKeyword.toLowerCase())
+          (order.account && order.account.toLowerCase().includes(searchKeyword.toLowerCase()))
         );
       }
       
-      // 渲染订单
-      renderOrders(filteredOrders);
-      
-      // 更新今日总额
-      updateTodayTotal(filteredOrders);
+      // 渲染订单（延迟执行以提高响应性）
+      setTimeout(() => {
+        renderOrders(filteredOrders);
+        
+        // 更新今日总额
+        updateTodayTotal(filteredOrders);
+      }, 10);
       
       // 显示自动刷新提示
       if (isAutoRefresh) {
@@ -2129,71 +2148,55 @@
       }
     } catch (error) {
       console.error('加载订单失败:', error);
+      const errorMessage = error.message || '未知错误';
+      showNotification(`加载订单失败: ${errorMessage}`, 'error');
     } finally {
       hideLoadingIndicator();
     }
   }
 
-  // 渲染订单
-  function renderOrders(orders) {
-    const container = document.getElementById('orders-container');
-    if (!container) return;
-    
-    // 显示订单区域
-    if (!orders.length) {
-      container.innerHTML = '<div class="no-results">暂无订单</div>';
-      document.getElementById('load-more-container').style.display = 'none';
-      return;
-    }
-    
-    // 根据当前显示的数量限制要显示的订单
-    const ordersToDisplay = orders.slice(0, displayedOrders);
-    
-    // 根据视图模式显示订单
-    if (viewMode === 'grid') {
-      renderGridView(container, ordersToDisplay);
-    } else {
-      renderTableView(container, ordersToDisplay);
-    }
-    
-    // 显示更多按钮
-    const loadMoreContainer = document.getElementById('load-more-container');
-    if (loadMoreContainer) {
-      // 只有当总订单数大于当前显示数时才显示"显示更多"按钮
-      loadMoreContainer.style.display = orders.length > displayedOrders ? 'block' : 'none';
-    }
-  }
-  
-  // 渲染网格视图
+  // 渲染网格视图 - 优化版
   function renderGridView(gridContainer, orders) {
-    gridContainer.innerHTML = '';
-    
     // 如果没有订单，显示提示
-    if (orders.length === 0) {
+    if (!orders.length) {
       gridContainer.innerHTML = '<div class="no-results">暂无订单</div>';
       return;
     }
     
+    // 使用DocumentFragment提高性能
+    const fragment = document.createDocumentFragment();
+    const template = document.createElement('template');
+    
     orders.forEach(o => {
-      const cls = 'status-' + o.status.replace('已','').toLowerCase();
+      const cls = 'status-' + (o.status || '').replace('已','').toLowerCase();
       
-      const html = `
-        <div class="order-list-item" data-order-id="${o.id}">
-          <h4>订单 #${o.id} <span class="status-badge ${cls}">${o.status_text}</span></h4>
+      template.innerHTML = `
+        <div class="order-list-item" data-order-id="${o.id || ''}">
+          <h4>订单 #${o.id || ''} <span class="status-badge ${cls}">${o.status_text || ''}</span></h4>
           ${isAdmin && o.accepted_by ? `<p class="creator">接单者：${escapeHtml(o.accepted_by)}</p>` : ''}
-          <p class="account"><strong>YouTube：</strong>${o.account.includes('uploads') ? `<a href="/${o.account}" target="_blank">查看二维码</a>` : '未上传二维码'}</p>
-          ${o.remark ? `<p class="remark"><strong>备注：</strong><strong>${escapeHtml(o.remark)}</strong></p>` : '<p class="remark"><strong>备注：</strong><strong></strong></p>'}
-          <div class="time-info">
-            <p class="time">提交时间：${formatDateTime(o.created_at)}</p>
-            ${o.completed_at ? `<p class="time">完成时间：${formatDateTime(o.completed_at)}</p>` : ''}
+          <p class="account"><strong>YouTube：</strong>${o.account && o.account.includes('uploads') ? `<a href="/${o.account}" target="_blank">查看二维码</a>` : '未上传二维码'}</p>
+          <p class="package"><strong>套餐：</strong>${o.package || ''}</p>
+          <p class="date"><strong>提交时间：</strong>${formatDateTime(o.created_at)}</p>
+          ${o.remark ? `<p class="remark"><strong>备注：</strong>${escapeHtml(o.remark)}</p>` : ''}
+          <div class="order-actions">
+            ${o.can_cancel ? `<button onclick="cancelOrder(${o.id})" class="action-button cancel-button"><i class="fas fa-times"></i> 取消订单</button>` : ''}
+            ${o.status === 'accepted' ? `<button onclick="urgeOrder(${o.id})" class="action-button urge-button"><i class="fas fa-bell"></i> 催单</button>` : ''}
+            ${o.status === 'completed' ? `<button onclick="disputeOrder(${o.id})" class="action-button dispute-button"><i class="fas fa-exclamation-triangle"></i> 有问题</button>` : ''}
+            ${o.status === 'submitted' ? `<button onclick="confirmOrder(${o.id})" class="action-button confirm-button"><i class="fas fa-check"></i> 确认无误</button>` : ''}
           </div>
-          ${o.status === 'accepted' || o.status === 'submitted' ? `<button class="confirm-btn" onclick="confirmOrder(${o.id})">确认</button>` : ''}
-          <button class="detail-btn" onclick="showOrderDetail(${o.id})">详情</button>
-        </div>`;
-      gridContainer.insertAdjacentHTML('beforeend', html);
+        </div>
+      `;
+      
+      // 添加到fragment
+      const node = template.content.firstChild;
+      fragment.appendChild(node.cloneNode(true));
     });
+    
+    // 一次性替换DOM内容
+    gridContainer.innerHTML = '';
+    gridContainer.appendChild(fragment);
   }
-  
+
   // 渲染表格视图
   function renderTableView(container, orders) {
     let html = `
@@ -2396,6 +2399,8 @@
       indicator.classList.remove('show');
     }
   }
+
+  // 注意：这里曾有一个renderOrders函数的重复定义，已移除
 </script>
 
 </body>
