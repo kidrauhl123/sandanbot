@@ -34,7 +34,6 @@ from modules.constants import sync_env_sellers_to_db
 
 # 创建一个线程安全的队列用于在Flask和Telegram机器人之间通信
 # 这个队列将会在启动Telegram机器人时被替换为机器人内部创建的队列
-global notification_queue
 notification_queue = queue.Queue()
 
 # 锁目录路径
@@ -400,7 +399,8 @@ if __name__ == "__main__":
         from modules.tgbot import start_bot
         
         # 直接启动TG机器人，内部已经创建了线程
-        global notification_queue  # 使用全局队列
+        # 我们使用nonlocal关键字来表明我们要修改全局的notification_queue
+        # 但在Python中，不能在函数内使用nonlocal来访问全局变量，所以这里直接赋值
         notification_queue = start_bot()  # start_bot会返回创建的队列
         logger.info("Telegram机器人已启动")
     except Exception as e:
