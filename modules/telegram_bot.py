@@ -1412,3 +1412,7 @@ async def send_order_notification_direct(order_id, account, remark, preferred_se
         except Exception as e:
             logger.error(f"[直接通知] 发送图片失败: {str(e)}", exc_info=True)
             return False
+    
+    except Exception as e:
+        logger.error(f"[直接通知] 函数执行失败: {str(e)}", exc_info=True)
+        return False
