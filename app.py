@@ -375,6 +375,34 @@ if __name__ == "__main__":
             
     # 使用锁目录确保只有一个实例运行
     try:
+        # 先检查锁目录是否存在，如果存在则尝试删除（可能是之前的实例异常退出）
+        if os.path.exists(lock_dir):
+            try:
+                if os.path.isdir(lock_dir):
+                    os.rmdir(lock_dir)
+                else:
+                    os.remove(lock_dir)
+                logger.info(f"清理了可能残留的锁: {lock_dir}")
+            except Exception as e:
+                logger.error(f"清理残留锁失败: {str(e)}")
+                # 如果无法清理锁，检查是否有进程持有锁
+                import platform
+                if platform.system() == 'Windows':
+                    logger.error("在Windows上无法检查进程锁，假定锁无效并继续")
+                else:
+                    # 在Linux/Unix上尝试通过lsof检查是否有进程持有锁
+                    try:
+                        import subprocess
+                        result = subprocess.run(['lsof', '+D', lock_dir], capture_output=True, text=True)
+                        if result.stdout.strip():
+                            logger.error(f"有进程正在使用锁目录，程序退出: {result.stdout}")
+                            sys.exit(1)
+                        else:
+                            logger.info("锁目录没有被其他进程使用，继续执行")
+                    except Exception as e:
+                        logger.error(f"检查锁目录使用情况失败: {str(e)}")
+                        
+        # 创建新的锁目录
         os.mkdir(lock_dir)
         logger.info("成功获取锁，启动主程序。")
     except FileExistsError:
@@ -416,4 +444,6 @@ if __name__ == "__main__":
     logger.info(f"启动时活跃线程数: {threading.active_count()}")
     
     # 启动 Flask
-    app.run(host='0.0.0.0', debug=True)
+    # 在生产环境中禁用debug模式，避免进程重启导致的问题
+    debug_mode = False if is_production else True
+    app.run(host='0.0.0.0', debug=debug_mode)

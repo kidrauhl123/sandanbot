@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 # 中国时区
 CN_TIMEZONE = pytz.timezone('Asia/Shanghai')
 
+# 全局变量
+pg_pool = None  # PostgreSQL连接池
+
 # 获取中国时间的函数
 def get_china_time():
     """获取当前中国时间（UTC+8）"""
@@ -408,37 +411,119 @@ def execute_query(query, params=(), fetch=False, return_cursor=False):
 
 def execute_postgres_query(query, params=(), fetch=False, return_cursor=False):
     """执行PostgreSQL查询并返回结果"""
-    url = urlparse(DATABASE_URL)
-    dbname = url.path[1:]
-    user = url.username
-    password = url.password
-    host = url.hostname
-    port = url.port
+    from contextlib import contextmanager
+    from psycopg2.pool import ThreadedConnectionPool
+    import time
+    import psycopg2
     
-    conn = psycopg2.connect(
-        dbname=dbname,
-        user=user,
-        password=password,
-        host=host,
-        port=port
-    )
-    cursor = conn.cursor()
+    # 连接池，避免频繁创建连接
+    global pg_pool
+    if 'pg_pool' not in globals() or pg_pool is None:
+        url = urlparse(DATABASE_URL)
+        dbname = url.path[1:]
+        user = url.username
+        password = url.password
+        host = url.hostname
+        port = url.port
+        
+        try:
+            pg_pool = ThreadedConnectionPool(
+                minconn=1,
+                maxconn=20,
+                dbname=dbname,
+                user=user,
+                password=password,
+                host=host,
+                port=port
+            )
+            logger.info("PostgreSQL连接池已创建")
+        except Exception as e:
+            logger.error(f"创建PostgreSQL连接池失败: {str(e)}", exc_info=True)
+            pg_pool = None
     
-    # PostgreSQL使用%s作为参数占位符，而不是SQLite的?
+    @contextmanager
+    def get_connection():
+        """从连接池获取连接，并在使用后释放"""
+        conn = None
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                if pg_pool:
+                    conn = pg_pool.getconn()
+                    break
+                else:
+                    # 如果连接池不可用，创建新连接
+                    url = urlparse(DATABASE_URL)
+                    dbname = url.path[1:]
+                    user = url.username
+                    password = url.password
+                    host = url.hostname
+                    port = url.port
+                    
+                    conn = psycopg2.connect(
+                        dbname=dbname,
+                        user=user,
+                        password=password,
+                        host=host,
+                        port=port
+                    )
+                    break
+            except Exception as e:
+                retry_count += 1
+                logger.error(f"获取数据库连接失败 (尝试 {retry_count}/{max_retries}): {str(e)}")
+                if retry_count >= max_retries:
+                    raise
+                time.sleep(1)  # 等待1秒再重试
+        
+        try:
+            yield conn
+        finally:
+            try:
+                if pg_pool and conn:
+                    pg_pool.putconn(conn)
+                elif conn:
+                    conn.close()
+            except Exception as e:
+                logger.error(f"释放数据库连接失败: {str(e)}")
+    
+    max_retries = 3
+    retry_count = 0
+    last_error = None
+    
+    # 替换SQL占位符
     query = query.replace('?', '%s')
-    cursor.execute(query, params)
     
-    if return_cursor:
-        conn.commit()
-        return cursor
-
-    result = None
-    if fetch:
-        result = cursor.fetchall()
+    while retry_count < max_retries:
+        try:
+            with get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                
+                if return_cursor:
+                    conn.commit()
+                    return cursor
+                
+                result = None
+                if fetch:
+                    result = cursor.fetchall()
+                
+                conn.commit()
+                return result
+        except Exception as e:
+            retry_count += 1
+            last_error = e
+            logger.error(f"执行查询失败 (尝试 {retry_count}/{max_retries}): {str(e)}")
+            if retry_count >= max_retries:
+                break
+            time.sleep(1)  # 等待1秒再重试
     
-    conn.commit()
-    conn.close()
-    return result
+    # 如果所有重试都失败，抛出最后一个错误
+    if last_error:
+        logger.critical(f"执行查询多次失败: {str(last_error)}")
+        raise last_error
+    return None
 
 # ===== 密码加密 =====
 def hash_password(password):
