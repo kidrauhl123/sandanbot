@@ -313,13 +313,13 @@ def register_routes(app, notification_queue):
             next_id, seller_ids, idx = result
             preferred_seller = next_id
             logger.info(f"自动分流选择卖家: {preferred_seller} (索引: {idx}, 总卖家: {len(seller_ids)})")
+            
+            # 立即更新指针，确保下一个订单不会选择同一个卖家
+            new_pointer = (idx + 1) % len(seller_ids)
+            set_seller_pointer_b_mode(new_pointer, seller_ids)
+            logger.info(f"已更新分流指针到 {new_pointer}, 下次将选择索引 {new_pointer} 的卖家: {seller_ids[new_pointer] if new_pointer < len(seller_ids) else '无'}")
         else:
             logger.info(f"用户指定接单人: {preferred_seller}")
-        
-        # 立即更新指针，确保不会被后续操作影响
-        if result:  # 只有在自动分流时才更新指针
-            set_seller_pointer_b_mode(idx + 1, seller_ids)
-            logger.info(f"已更新分流指针到 {idx + 1}, 下次将选择索引 {(idx + 1) % len(seller_ids)} 的卖家")
         
         logger.info(f"收到订单提交请求: 二维码={file_path}, 套餐={package}, 指定接单人={preferred_seller or '无'}")
         
@@ -347,33 +347,13 @@ def register_routes(app, notification_queue):
 
             logger.info(f"订单提交成功: 用户={username}, 套餐={package}, 新余额={new_balance}")
             
-            # 获取最新订单列表并格式化
-            orders_raw = execute_query("SELECT id, account, password, package, status, created_at FROM orders ORDER BY id DESC LIMIT 5", fetch=True)
-            orders = []
-            
             # 获取新创建的订单ID
+            new_order_raw = execute_query("SELECT id FROM orders ORDER BY id DESC LIMIT 1", fetch=True)
             new_order_id = None
-            if orders_raw and len(orders_raw) > 0:
-                new_order_id = orders_raw[0][0]
+            if new_order_raw and len(new_order_raw) > 0:
+                new_order_id = new_order_raw[0][0]
                 logger.info(f"新创建的订单ID: {new_order_id}")
                 print(f"DEBUG: 新创建的订单ID: {new_order_id}")
-            
-            for o in orders_raw:
-                orders.append({
-                    "id": o[0],
-                    "account": o[1],
-                    "password": o[2],
-                    "package": o[3],
-                    "status": o[4],
-                    "status_text": STATUS_TEXT_ZH.get(o[4], o[4]),
-                    "created_at": o[5],
-                    "accepted_at": "",
-                    "completed_at": "",
-                    "remark": "",
-                    "creator": username, # Simplification, actual creator might differ if admin creates for others
-                    "accepted_by": "",
-                    "can_cancel": o[4] == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == o[6])
-                })
             
             # 触发立即通知卖家 - 直接调用TG通知函数
             if new_order_id:
@@ -412,13 +392,41 @@ def register_routes(app, notification_queue):
                 except Exception as e:
                     logger.error(f"启动通知线程失败: {str(e)}", exc_info=True)
                 
-                # 更新分流指针
-                if result:  # 只有在自动分流时才更新指针
-                    set_seller_pointer_b_mode(idx + 1, seller_ids)
-                    logger.info(f"已更新分流指针到 {idx + 1}, 下次将选择索引 {(idx + 1) % len(seller_ids)} 的卖家")
             else:
                 logger.warning("无法获取新创建的订单ID，无法发送通知")
                 print("WARNING: 无法获取新创建的订单ID，无法发送通知")
+            
+            # 等待一小会儿让自动接单完成，然后获取更新后的订单列表
+            import time
+            time.sleep(0.5)  # 等待500毫秒
+            
+            # 获取最新订单列表并格式化（包含接单人信息）
+            orders_raw = execute_query("""
+                SELECT id, account, password, package, status, created_at, 
+                       accepted_by, accepted_at, completed_at, remark
+                FROM orders 
+                ORDER BY id DESC LIMIT 5
+            """, fetch=True)
+            orders = []
+            
+
+            
+            for o in orders_raw:
+                orders.append({
+                    "id": o[0],
+                    "account": o[1],
+                    "password": o[2],
+                    "package": o[3],
+                    "status": o[4],
+                    "status_text": STATUS_TEXT_ZH.get(o[4], o[4]),
+                    "created_at": o[5],
+                    "accepted_by": get_seller_display_name(o[6]) if o[6] else "",
+                    "accepted_at": o[7] or "",
+                    "completed_at": o[8] or "",
+                    "remark": o[9] or "",
+                    "creator": username,
+                    "can_cancel": o[4] == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == user_id)
+                })
             
             return jsonify({
                 "success": True,
