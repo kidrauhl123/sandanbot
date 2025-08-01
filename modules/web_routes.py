@@ -381,9 +381,10 @@ def register_routes(app, notification_queue):
                 mark_order_notified(new_order_id)
                 
                 # 获取最新的全局通知队列
-                global_queue = get_notification_queue()
-                if global_queue:
-                    global_queue.put({
+                from modules.telegram_bot import notification_queue as tg_queue
+                notification_q = tg_queue if tg_queue else notification_queue
+                if tg_queue:
+                    tg_queue.put({
                         'type': 'new_order',
                         'order_id': new_order_id,
                         'account': file_path,
@@ -392,7 +393,7 @@ def register_routes(app, notification_queue):
                         'preferred_seller': preferred_seller,
                         'remark': remark
                     })
-                    logger.info(f"已将订单 #{new_order_id} 加入全局通知队列")
+                    logger.info(f"已将订单 #{new_order_id} 加入TG通知队列")
                 else:
                     # 尝试使用传入的队列
                     notification_queue.put({
