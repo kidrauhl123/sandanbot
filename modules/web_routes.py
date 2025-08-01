@@ -2434,6 +2434,61 @@ def register_routes(app, notification_queue):
             logger.error(f"确认订单 {oid} 收货时发生错误: {e}", exc_info=True)
             return jsonify({"error": "服务器错误，请稍后重试"}), 500
 
+    @app.route('/test-notify/<int:order_id>')
+    @login_required
+    @admin_required
+    def test_notify_order(order_id):
+        """测试通知指定订单给卖家"""
+        try:
+            # 获取订单信息
+            order = execute_query("SELECT * FROM orders WHERE id = %s", (order_id,), fetch=True)
+            if not order:
+                return jsonify({"error": "订单不存在"}), 404
+            
+            order = order[0]
+            
+            # 获取分流卖家
+            from modules.database import get_next_seller_b_mode
+            result = get_next_seller_b_mode()
+            if not result:
+                return jsonify({"error": "没有可用的分流卖家"}), 400
+            
+            next_id, seller_ids, idx = result
+            
+            logger.info(f"手动测试通知：订单 #{order_id} -> 卖家 {next_id}")
+            
+            # 直接调用通知函数
+            import asyncio
+            import threading
+            from modules.telegram_bot import send_order_notification_direct
+            
+            def notify_seller():
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    success = loop.run_until_complete(send_order_notification_direct(
+                        order_id=order_id,
+                        account=order[1],  # account字段
+                        remark=order[5] if len(order) > 5 else "",  # remark字段
+                        preferred_seller=next_id
+                    ))
+                    loop.close()
+                    logger.info(f"手动测试通知结果: {success}")
+                except Exception as e:
+                    logger.error(f"手动测试通知失败: {str(e)}", exc_info=True)
+            
+            notify_thread = threading.Thread(target=notify_seller, daemon=True)
+            notify_thread.start()
+            
+            return jsonify({
+                "success": True,
+                "message": f"已发送测试通知：订单 #{order_id} -> 卖家 {next_id}"
+            })
+            
+        except Exception as e:
+            logger.error(f"测试通知失败: {str(e)}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+
 def set_seller_pointer_b_mode(new_pointer, seller_ids):
     conn = get_db_connection()
     if not conn:

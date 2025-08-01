@@ -1602,6 +1602,16 @@ async def send_order_notification_direct(order_id, account, remark, preferred_se
     logger.info(f"[直接通知] 开始处理订单 #{order_id} 的通知，目标卖家: {preferred_seller}")
     
     try:
+        # 检查bot_application是否可用
+        global bot_application
+        logger.info(f"[直接通知] bot_application状态: {bot_application is not None}")
+        if bot_application:
+            logger.info(f"[直接通知] bot_application.bot状态: {bot_application.bot is not None}")
+        
+        if not bot_application or not bot_application.bot:
+            logger.error(f"[直接通知] bot_application 未初始化")
+            return False
+        
         # 检查订单是否存在
         order = get_order_by_id(order_id)
         if not order:
@@ -1620,45 +1630,61 @@ async def send_order_notification_direct(order_id, account, remark, preferred_se
         
         logger.info(f"[直接通知] 找到图片文件: {image_path}")
         
-        # 准备消息内容
-        caption = f"*{remark}*" if remark else f"新订单 #{order_id}"
-        keyboard = [
-            [InlineKeyboardButton("✅ Complete", callback_data=f"done_{order_id}"),
-             InlineKeyboardButton("❓ Any Problem", callback_data=f"fail_{order_id}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        logger.info(f"[直接通知] 准备发送图片给卖家 {preferred_seller}")
-        
-        # 发送图片消息
+        # 首先尝试发送简单的文本消息测试连接
         try:
-            await asyncio.wait_for(
-                bot_application.bot.send_photo(
+            test_message = f"🔔 新订单通知 #{order_id}\n📝 备注: {remark or '无'}"
+            logger.info(f"[直接通知] 发送测试消息: {test_message}")
+            
+            result = await asyncio.wait_for(
+                bot_application.bot.send_message(
                     chat_id=int(preferred_seller),
-                    photo=open(image_path, 'rb'),
-                    caption=caption,
-                    parse_mode='Markdown',
-                    reply_markup=reply_markup
+                    text=test_message
                 ),
-                timeout=15  # 15秒超时
+                timeout=10
             )
+            logger.info(f"[直接通知] 测试消息发送成功，消息ID: {result.message_id}")
             
-            logger.info(f"[直接通知] 成功发送图片给卖家 {preferred_seller}")
-            
-            # 自动接单
-            success = await auto_accept_order(order_id, preferred_seller)
-            if success:
-                logger.info(f"[直接通知] 卖家 {preferred_seller} 自动接单成功")
-            else:
-                logger.warning(f"[直接通知] 卖家 {preferred_seller} 自动接单失败")
-            
-            return True
+            # 如果文本消息成功，尝试发送图片
+            try:
+                caption = f"*{remark}*" if remark else f"新订单 #{order_id}"
+                keyboard = [
+                    [InlineKeyboardButton("✅ Complete", callback_data=f"done_{order_id}"),
+                     InlineKeyboardButton("❓ Any Problem", callback_data=f"fail_{order_id}")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                with open(image_path, 'rb') as photo_file:
+                    photo_result = await asyncio.wait_for(
+                        bot_application.bot.send_photo(
+                            chat_id=int(preferred_seller),
+                            photo=photo_file,
+                            caption=caption,
+                            parse_mode='Markdown',
+                            reply_markup=reply_markup
+                        ),
+                        timeout=15
+                    )
+                
+                logger.info(f"[直接通知] 成功发送图片给卖家 {preferred_seller}，消息ID: {photo_result.message_id}")
+                
+                # 自动接单
+                success = await auto_accept_order(order_id, preferred_seller)
+                if success:
+                    logger.info(f"[直接通知] 卖家 {preferred_seller} 自动接单成功")
+                else:
+                    logger.warning(f"[直接通知] 卖家 {preferred_seller} 自动接单失败")
+                
+                return True
+                
+            except Exception as e:
+                logger.error(f"[直接通知] 发送图片失败: {str(e)}", exc_info=True)
+                return False
             
         except asyncio.TimeoutError:
-            logger.error(f"[直接通知] 发送图片给卖家 {preferred_seller} 超时")
+            logger.error(f"[直接通知] 发送消息给卖家 {preferred_seller} 超时")
             return False
         except Exception as e:
-            logger.error(f"[直接通知] 发送图片给卖家 {preferred_seller} 失败: {str(e)}", exc_info=True)
+            logger.error(f"[直接通知] 发送消息失败: {str(e)}", exc_info=True)
             return False
             
     except Exception as e:
