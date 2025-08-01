@@ -65,6 +65,9 @@ def get_seller_display_name(accepted_by):
     return ""
 
 def register_routes(app, notification_queue):
+    # 导入全局通知队列获取函数
+    from app import get_notification_queue
+    
     @app.route('/login', methods=['GET', 'POST'])
     def login():
         if request.method == 'POST':
@@ -372,15 +375,33 @@ def register_routes(app, notification_queue):
             if new_order_id:
                 from modules.database import mark_order_notified
                 mark_order_notified(new_order_id)
-                notification_queue.put({
-                    'type': 'new_order',
-                    'order_id': new_order_id,
-                    'account': file_path,
-                    'password': '',
-                    'package': package,
-                    'preferred_seller': preferred_seller,
-                    'remark': remark
-                })
+                
+                # 获取最新的全局通知队列
+                global_queue = get_notification_queue()
+                if global_queue:
+                    global_queue.put({
+                        'type': 'new_order',
+                        'order_id': new_order_id,
+                        'account': file_path,
+                        'password': '',
+                        'package': package,
+                        'preferred_seller': preferred_seller,
+                        'remark': remark
+                    })
+                    logger.info(f"已将订单 #{new_order_id} 加入全局通知队列")
+                else:
+                    # 尝试使用传入的队列
+                    notification_queue.put({
+                        'type': 'new_order',
+                        'order_id': new_order_id,
+                        'account': file_path,
+                        'password': '',
+                        'package': package,
+                        'preferred_seller': preferred_seller,
+                        'remark': remark
+                    })
+                    logger.info(f"已将订单 #{new_order_id} 加入传入的通知队列")
+                
                 # 更新分流指针
                 if not request.form.get('preferred_seller', ''):
                     set_seller_pointer_b_mode(idx + 1, seller_ids)
@@ -394,7 +415,8 @@ def register_routes(app, notification_queue):
                 "success": True,
                 "message": '订单已提交成功！',
                 "balance": new_balance,
-                "credit_limit": credit_limit
+                "credit_limit": credit_limit,
+                "orders": orders  # 返回最新的订单列表
             })
             
         except Exception as e:
@@ -794,30 +816,20 @@ def register_routes(app, notification_queue):
     # 添加一个路由用于手动触发订单检查
     @app.route('/check-orders')
     def manual_check_orders():
-        logger.info("手动触发订单检查")
-        
+        """手动检查未通知的订单并发送通知"""
         try:
-            # 检查机器人实例
-            if notification_queue is None:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Telegram机器人实例未初始化'
-                })
+            # 导入必要的函数
+            from modules.telegram_bot import check_and_push_orders
             
-            # 创建事件循环并执行订单检查
+            # 异步执行检查和推送
+            import asyncio
             asyncio.run(check_and_push_orders())
             
-            return jsonify({
-                'status': 'ok',
-                'message': '订单检查已触发',
-                'time': get_china_time()
-            })
+            # 返回结果
+            return jsonify({"success": True, "message": "订单检查已触发"})
         except Exception as e:
-            logger.error(f"手动触发订单检查失败: {str(e)}", exc_info=True)
-            return jsonify({
-                'status': 'error',
-                'message': f'触发失败: {str(e)}'
-            })
+            logger.error(f"手动检查订单时出错: {str(e)}", exc_info=True)
+            return jsonify({"success": False, "error": str(e)}), 500
 
     # ==================================
     #        后台管理 (Admin)
@@ -2399,8 +2411,12 @@ def register_routes(app, notification_queue):
 
             # 只发送一个通知，直接更新原始订单消息
             try:
+                # 获取最新的全局通知队列
+                global_queue = get_notification_queue()
+                notification_q = global_queue if global_queue else notification_queue
+                
                 # 使用 order_status_change 类型，这会在 TG 中更新原始消息
-                notification_queue.put({
+                notification_q.put({
                     'type': 'order_status_change',
                     'order_id': oid,
                     'status': STATUS['COMPLETED'],

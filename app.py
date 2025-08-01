@@ -8,7 +8,7 @@ import atexit
 import signal
 import json
 import traceback
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash, send_file
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash, send_file, g
 import sqlite3
 import shutil
 import asyncio
@@ -36,6 +36,11 @@ from modules.constants import sync_env_sellers_to_db
 # 创建一个线程安全的队列用于在Flask和Telegram机器人之间通信
 # 这个队列将会在启动Telegram机器人时被替换为机器人内部创建的队列
 notification_queue = queue.Queue()
+
+# 添加一个全局函数来获取通知队列
+def get_notification_queue():
+    """获取全局通知队列"""
+    return notification_queue
 
 # 锁目录路径
 lock_dir = 'bot.lock'

@@ -531,28 +531,59 @@ def hash_password(password):
 
 # 获取未通知订单
 def get_unnotified_orders():
-    """获取未通知的订单"""
-    orders = execute_query("""
-        SELECT id, account, password, package, created_at, web_user_id, remark 
-        FROM orders 
-        WHERE notified = 0 AND status = ?
-    """, (STATUS['SUBMITTED'],), fetch=True)
-    
-    # 记录获取到的未通知订单
-    if orders:
-        logger.info(f"获取到 {len(orders)} 个未通知订单")
-    
-    return orders
+    """获取所有未通知的订单"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            logger.error("获取未通知订单时无法连接数据库")
+            return []
+            
+        cursor = conn.cursor()
+        
+        # 查询所有未通知的订单
+        cursor.execute("""
+            SELECT id, account, password, package, created_at, web_user_id, remark
+            FROM orders
+            WHERE notified = 0 AND status = 'submitted'
+            ORDER BY id DESC
+            LIMIT 10
+        """)
+        
+        orders = cursor.fetchall()
+        conn.close()
+        
+        if orders:
+            logger.info(f"找到 {len(orders)} 个未通知的订单")
+        
+        return orders
+    except Exception as e:
+        logger.error(f"获取未通知订单时出错: {str(e)}", exc_info=True)
+        return []
 
 # 标记订单为已通知
 def mark_order_notified(order_id):
-    """将订单标记为已通知"""
+    """标记订单为已通知"""
     try:
-        execute_query("UPDATE orders SET notified = 1 WHERE id = ?", (order_id,))
-        logger.info(f"订单 #{order_id} 已标记为已通知")
+        conn = get_db_connection()
+        if not conn:
+            logger.error(f"标记订单 {order_id} 为已通知时无法连接数据库")
+            return False
+            
+        cursor = conn.cursor()
+        
+        # 更新订单的通知状态
+        if is_postgres():
+            cursor.execute("UPDATE orders SET notified = 1, notified_at = NOW() WHERE id = %s", (order_id,))
+        else:
+            cursor.execute("UPDATE orders SET notified = 1, notified_at = CURRENT_TIMESTAMP WHERE id = ?", (order_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"已标记订单 {order_id} 为已通知")
         return True
     except Exception as e:
-        logger.error(f"标记订单 #{order_id} 为已通知时出错: {str(e)}", exc_info=True)
+        logger.error(f"标记订单 {order_id} 为已通知时出错: {str(e)}", exc_info=True)
         return False
 
 # 获取订单详情

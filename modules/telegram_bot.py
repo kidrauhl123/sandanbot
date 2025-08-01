@@ -88,7 +88,6 @@ def get_db_connection():
     except Exception as e:
         logger.error(f"获取数据库连接时出错: {str(e)}", exc_info=True)
         print(f"ERROR: 获取数据库连接时出错: {str(e)}")
-        return None
 
 # 错误处理装饰器
 def callback_error_handler(func):
@@ -633,18 +632,17 @@ async def error_handler(update, context):
         print(f"ERROR: 尝试回复错误通知失败: {str(e)}")
 
 async def periodic_order_check():
-    """定期检查新订单的任务"""
-    check_count = 0
+    """定期检查未通知的订单"""
+    logger.info("启动定期订单检查任务")
     while True:
         try:
-            logger.debug(f"执行第 {check_count + 1} 次订单检查")
+            logger.debug("执行定期订单检查...")
             await check_and_push_orders()
-            await cleanup_processing_accepts()
-            check_count += 1
         except Exception as e:
-            logger.error(f"订单检查任务出错: {e}", exc_info=True)
+            logger.error(f"定期订单检查出错: {str(e)}", exc_info=True)
         
-        await asyncio.sleep(5) # 每5秒检查一次
+        # 每30秒检查一次
+        await asyncio.sleep(30)
 
 async def process_notification_queue(queue):
     """处理来自Flask的通知队列"""
@@ -1492,6 +1490,7 @@ async def check_and_push_orders():
     try:
         # 导入必要的函数
         from modules.database import get_unnotified_orders
+        from app import get_notification_queue
         
         # 获取未通知的订单
         unnotified_orders = get_unnotified_orders()
@@ -1515,9 +1514,11 @@ async def check_and_push_orders():
                 
                 # 使用全局通知队列
                 global notification_queue
-                if notification_queue:
+                queue_to_use = get_notification_queue() or notification_queue
+                
+                if queue_to_use:
                     # 添加到通知队列
-                    notification_queue.put({
+                    queue_to_use.put({
                         'type': 'new_order',
                         'order_id': order_id,
                         'account': account,
