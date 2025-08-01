@@ -646,25 +646,43 @@ async def periodic_order_check():
 
 async def process_notification_queue(queue):
     """处理来自Flask的通知队列"""
+    logger.info("启动通知队列处理任务")
+    print("DEBUG: 启动通知队列处理任务")
+    
     loop = asyncio.get_running_loop()
     while True:
         try:
+            # 检查队列是否为空
+            if queue.empty():
+                # 队列为空，等待一段时间后再次检查
+                await asyncio.sleep(1)
+                continue
+                
             # 在执行器中运行阻塞的 queue.get()，这样不会阻塞事件循环
-            data = await loop.run_in_executor(None, queue.get)
-            logger.info(f"从队列中获取到通知任务: {data.get('type')}, 数据: {data}")
-            
-            # 确保调用send_notification_from_queue并等待其完成
-            await send_notification_from_queue(data)
-            
-            # 标记任务完成
-            queue.task_done()
-            logger.info(f"通知任务 {data.get('type')} 处理完成")
+            try:
+                # 使用get_nowait避免阻塞
+                data = queue.get_nowait()
+                logger.info(f"从队列中获取到通知任务: {data.get('type')}, 数据: {data}")
+                print(f"DEBUG: 从队列中获取到通知任务: {data.get('type')}")
+                
+                # 确保调用send_notification_from_queue并等待其完成
+                await send_notification_from_queue(data)
+                
+                # 标记任务完成
+                queue.task_done()
+                logger.info(f"通知任务 {data.get('type')} 处理完成")
+            except queue.Empty:
+                # 队列为空，等待一会再试
+                await asyncio.sleep(1)
+                continue
+                
         except asyncio.CancelledError:
             logger.info("通知队列处理器被取消。")
             break
         except Exception as e:
             # 捕获并记录所有其他异常
             logger.error(f"处理通知队列任务时发生未知错误: {repr(e)}", exc_info=True)
+            print(f"ERROR: 处理通知队列任务时发生未知错误: {repr(e)}")
             # 等待一会避免在持续出错时刷屏
             await asyncio.sleep(5)
     

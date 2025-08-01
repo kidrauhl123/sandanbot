@@ -10,6 +10,7 @@ import json
 import random
 import string
 import functools
+import queue
 
 from flask import Flask, request, render_template, jsonify, session, redirect, url_for, flash, send_file
 
@@ -2428,6 +2429,105 @@ def register_routes(app, notification_queue):
         except Exception as e:
             logger.error(f"确认订单 {oid} 收货时发生错误: {e}", exc_info=True)
             return jsonify({"error": "服务器错误，请稍后重试"}), 500
+
+    @app.route('/process-notifications')
+    def process_notifications():
+        """手动处理通知队列中的通知"""
+        try:
+            # 获取全局通知队列
+            global_queue = get_notification_queue()
+            
+            if not global_queue:
+                logger.error("通知队列未初始化")
+                return jsonify({"success": False, "error": "通知队列未初始化"}), 500
+                
+            # 检查队列是否为空
+            if global_queue.empty():
+                logger.info("通知队列为空，没有需要处理的通知")
+                return jsonify({"success": True, "message": "通知队列为空，没有需要处理的通知"})
+                
+            # 获取队列大小
+            queue_size = global_queue.qsize()
+            
+            # 处理队列中的所有通知
+            processed = 0
+            while not global_queue.empty() and processed < 10:  # 最多处理10个，避免阻塞太久
+                try:
+                    # 获取通知数据
+                    data = global_queue.get_nowait()
+                    
+                    # 记录通知信息
+                    logger.info(f"手动处理通知: {data.get('type')}, 数据: {data}")
+                    
+                    # 将通知发送到Telegram
+                    if data.get('type') == 'new_order':
+                        # 获取订单数据
+                        order_id = data.get('order_id')
+                        account = data.get('account')
+                        remark = data.get('remark', '')
+                        preferred_seller = data.get('preferred_seller')
+                        
+                        # 获取活跃卖家列表
+                        from modules.database import get_active_sellers
+                        active_sellers = get_active_sellers()
+                        
+                        if not active_sellers:
+                            logger.warning(f"没有活跃的卖家可以接收订单通知: {order_id}")
+                            global_queue.task_done()
+                            processed += 1
+                            continue
+                            
+                        # 确定目标卖家
+                        target_seller = None
+                        if preferred_seller:
+                            for seller in active_sellers:
+                                if str(seller.get('id', '')) == str(preferred_seller):
+                                    target_seller = seller
+                                    break
+                        
+                        if not target_seller and active_sellers:
+                            target_seller = active_sellers[0]
+                            
+                        if target_seller:
+                            seller_id = target_seller.get('id', '')
+                            seller_name = target_seller.get('name', '')
+                            logger.info(f"手动分配订单 #{order_id} 给卖家 {seller_id}({seller_name})")
+                            
+                            # 更新订单为已接受状态
+                            from modules.telegram_bot import auto_accept_order
+                            import asyncio
+                            try:
+                                # 创建事件循环并运行auto_accept_order
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                result = loop.run_until_complete(auto_accept_order(order_id, seller_id))
+                                loop.close()
+                                
+                                if result:
+                                    logger.info(f"成功将订单 #{order_id} 分配给卖家 {seller_id}({seller_name})")
+                                else:
+                                    logger.warning(f"分配订单 #{order_id} 给卖家 {seller_id} 失败")
+                            except Exception as e:
+                                logger.error(f"手动分配订单时出错: {str(e)}", exc_info=True)
+                    
+                    # 标记任务完成
+                    global_queue.task_done()
+                    processed += 1
+                    
+                except queue.Empty:
+                    break
+                except Exception as e:
+                    logger.error(f"处理通知时出错: {str(e)}", exc_info=True)
+                    break
+            
+            return jsonify({
+                "success": True, 
+                "message": f"已处理 {processed}/{queue_size} 个通知"
+            })
+            
+        except Exception as e:
+            logger.error(f"手动处理通知队列时出错: {str(e)}", exc_info=True)
+            return jsonify({"success": False, "error": str(e)}), 500
 
 def set_seller_pointer_b_mode(new_pointer, seller_ids):
     conn = get_db_connection()
