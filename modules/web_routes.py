@@ -1351,13 +1351,6 @@ def register_routes(app, notification_queue):
         remove_seller(telegram_id)
         return jsonify({"success": True})
 
-    @app.route('/admin/api/sellers/<int:telegram_id>/toggle', methods=['POST'])
-    @login_required
-    @admin_required
-    def admin_api_toggle_seller(telegram_id):
-        toggle_seller_status(telegram_id)
-        return jsonify({"success": True})
-
     @app.route('/admin/api/sellers/<int:telegram_id>/distribution', methods=['POST'])
     @login_required
     @admin_required
@@ -1366,7 +1359,7 @@ def register_routes(app, notification_queue):
         try:
             # 获取当前状态
             current_status = execute_query(
-                "SELECT is_active FROM sellers WHERE telegram_id = %s", 
+                "SELECT distribution FROM sellers WHERE telegram_id = %s", 
                 (str(telegram_id),), fetch=True
             )
             
@@ -1376,7 +1369,7 @@ def register_routes(app, notification_queue):
             # 切换状态
             new_status = not current_status[0][0]
             execute_query(
-                "UPDATE sellers SET is_active = %s WHERE telegram_id = %s", 
+                "UPDATE sellers SET distribution = %s WHERE telegram_id = %s", 
                 (new_status, str(telegram_id))
             )
             

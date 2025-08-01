@@ -571,11 +571,11 @@ def mark_order_notified(order_id):
             
         cursor = conn.cursor()
         
-        # 更新订单的通知状态
+        # 更新订单的通知状态，移除不存在的notified_at列
         if is_postgres():
-            cursor.execute("UPDATE orders SET notified = 1, notified_at = NOW() WHERE id = %s", (order_id,))
+            cursor.execute("UPDATE orders SET notified = 1 WHERE id = %s", (order_id,))
         else:
-            cursor.execute("UPDATE orders SET notified = 1, notified_at = CURRENT_TIMESTAMP WHERE id = ?", (order_id,))
+            cursor.execute("UPDATE orders SET notified = 1 WHERE id = ?", (order_id,))
         
         conn.commit()
         conn.close()
