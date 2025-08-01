@@ -615,7 +615,7 @@ def get_active_sellers():
         SELECT telegram_id, nickname, username, first_name, 
                last_active_at, desired_orders
         FROM sellers 
-        WHERE is_active = TRUE
+        WHERE is_active = TRUE AND distribution = TRUE
     """, fetch=True)
     
     result = []
@@ -629,6 +629,10 @@ def get_active_sellers():
             "last_active_at": last_active_at or "",
             "desired_orders": desired_orders or 0
         })
+    
+    # 记录找到的活跃卖家
+    logger.info(f"找到 {len(result)} 个活跃且参与分流的卖家: {result}")
+    
     return result
 
 def add_seller(telegram_id, username, first_name, nickname, added_by):
@@ -2087,27 +2091,41 @@ def create_seller_round_robin_table():
 # B模式：获取下一个分流卖家ID
 
 def get_next_seller_b_mode():
+    """获取下一个分流卖家ID"""
     conn = get_db_connection()
     if not conn:
+        logger.error("获取分流卖家时无法连接数据库")
         return None
     try:
         cur = conn.cursor()
         # 获取所有分流中卖家ID，按telegram_id升序
         if is_postgres():
-            cur.execute("SELECT telegram_id FROM sellers WHERE distribution=TRUE ORDER BY telegram_id ASC")
+            cur.execute("SELECT telegram_id FROM sellers WHERE distribution=TRUE AND is_active=TRUE ORDER BY telegram_id ASC")
         else:
-            cur.execute("SELECT telegram_id FROM sellers WHERE distribution=1 ORDER BY telegram_id ASC")
+            cur.execute("SELECT telegram_id FROM sellers WHERE distribution=1 AND is_active=1 ORDER BY telegram_id ASC")
         seller_ids = [str(row[0]) for row in cur.fetchall()]
+        
         if not seller_ids:
+            logger.warning("没有找到参与分流的活跃卖家")
             return None
+            
+        logger.info(f"找到 {len(seller_ids)} 个参与分流的活跃卖家: {seller_ids}")
+        
         # 查询指针
         cur.execute("SELECT pointer FROM seller_round_robin WHERE mode='B' AND user_id IS NULL")
         row = cur.fetchone()
         pointer = row[0] if row else 0
+        
         # 取下一个卖家
         idx = pointer % len(seller_ids)
         next_id = seller_ids[idx]
+        
+        logger.info(f"当前分流指针: {pointer}, 选择索引: {idx}, 卖家ID: {next_id}")
+        
         return next_id, seller_ids, idx
+    except Exception as e:
+        logger.error(f"获取分流卖家时出错: {str(e)}", exc_info=True)
+        return None
     finally:
         conn.close()
 

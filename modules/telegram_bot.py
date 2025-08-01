@@ -753,25 +753,34 @@ async def send_notification_from_queue(data):
             # 发送消息给卖家（如果指定了特定卖家，则只发给他们）
             logger.info(f"[通知流程] preferred_seller: {preferred_seller}, type: {type(preferred_seller)}")
             logger.info(f"[通知流程] active_sellers: {active_sellers}")
-            try:
-                target_sellers = [seller for seller in active_sellers if str(seller.get('id', seller.get('telegram_id'))) == str(preferred_seller)]
-                logger.info(f"[通知流程] target_sellers after preferred_seller filter: {target_sellers}")
+            
+            # 确定目标卖家
+            target_sellers = []
+            if preferred_seller:
+                # 尝试查找指定的卖家
+                for seller in active_sellers:
+                    seller_id = str(seller.get('id', ''))
+                    if seller_id == str(preferred_seller):
+                        target_sellers = [seller]
+                        logger.info(f"[通知流程] 找到指定的卖家: {seller}")
+                        break
+                
                 if not target_sellers:
                     logger.warning(f"[通知流程] 指定的卖家不存在或不活跃: {preferred_seller}")
-                    # 如果没有指定卖家，推送给所有活跃卖家
+                    # 如果没有找到指定卖家，使用所有活跃卖家
                     target_sellers = active_sellers
-                    logger.info(f"[通知流程] target_sellers fallback to all active: {target_sellers}")
-            except Exception as e:
-                logger.error(f"[通知流程] target_sellers筛选异常: {e}", exc_info=True)
             else:
-                logger.info(f"[通知流程] for循环前，target_sellers: {target_sellers}")
+                # 没有指定卖家，使用所有活跃卖家
+                target_sellers = active_sellers
+            
+            logger.info(f"[通知流程] 最终目标卖家: {target_sellers}")
             
             # 为订单添加状态标记
             await mark_order_as_processing(order_id)
             
             # 发送通知给选中的卖家
             for seller in target_sellers:
-                seller_id = seller.get('id', seller.get('telegram_id'))
+                seller_id = seller.get('id', '')
                 try:
                     logger.info(f"准备发送图片给卖家 {seller_id}: {image_path}")
                     print(f"DEBUG: 准备发送图片给卖家 {seller_id}: {image_path}")
@@ -798,6 +807,9 @@ async def send_notification_from_queue(data):
                         logger.info(f"已发送图片给卖家 {seller_id}")
                         print(f"DEBUG: 已发送图片给卖家 {seller_id}")
                         await auto_accept_order(order_id, seller_id)
+                        
+                        # 成功发送给一个卖家后，不再发送给其他卖家
+                        break
                     except asyncio.TimeoutError:
                         logger.error(f"发送图片给卖家 {seller_id} 超时")
                         print(f"ERROR: 发送图片给卖家 {seller_id} 超时")
@@ -894,15 +906,48 @@ async def auto_accept_order(order_id, seller_id):
         username = user_info.get('username', '')
         first_name = user_info.get('first_name', '')
         
+        logger.info(f"开始为卖家 {seller_id}({username or first_name}) 自动接单 #{order_id}")
+        
+        # 检查订单当前状态
+        order = get_order_by_id(order_id)
+        if not order:
+            logger.error(f"自动接单失败：找不到订单 #{order_id}")
+            return False
+            
+        current_status = order.get('status')
+        if current_status != STATUS['SUBMITTED']:
+            logger.warning(f"自动接单失败：订单 #{order_id} 当前状态为 {current_status}，不是未接单状态")
+            return False
+            
         # 更新订单为已接受状态
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        execute_query(
-            "UPDATE orders SET status=?, accepted_by=?, accepted_at=?, accepted_by_username=?, accepted_by_first_name=? WHERE id=?",
-            (STATUS['ACCEPTED'], str(seller_id), timestamp, username, first_name, order_id)
-        )
-        logger.info(f"卖家 {seller_id} 已自动接受订单 #{order_id}")
+        
+        # 使用数据库函数更新订单状态
+        if DATABASE_URL.startswith('postgres'):
+            result = execute_query(
+                "UPDATE orders SET status=%s, accepted_by=%s, accepted_at=%s, accepted_by_username=%s, accepted_by_first_name=%s WHERE id=%s AND status=%s RETURNING id",
+                (STATUS['ACCEPTED'], str(seller_id), timestamp, username, first_name, order_id, STATUS['SUBMITTED']),
+                fetch=True
+            )
+            success = result and len(result) > 0
+        else:
+            # SQLite没有RETURNING，所以我们使用rowcount
+            result = execute_query(
+                "UPDATE orders SET status=?, accepted_by=?, accepted_at=?, accepted_by_username=?, accepted_by_first_name=? WHERE id=? AND status=?",
+                (STATUS['ACCEPTED'], str(seller_id), timestamp, username, first_name, order_id, STATUS['SUBMITTED'])
+            )
+            # 注：execute_query需要返回rowcount才能判断是否成功
+            success = True  # 简化处理
+            
+        if success:
+            logger.info(f"卖家 {seller_id}({username or first_name}) 已自动接受订单 #{order_id}")
+            return True
+        else:
+            logger.warning(f"卖家 {seller_id} 自动接单失败，可能订单已被其他卖家接走")
+            return False
     except Exception as e:
-        logger.error(f"自动接单过程中出错: {str(e)}")
+        logger.error(f"自动接单过程中出错: {str(e)}", exc_info=True)
+        return False
     
 def run_bot_in_thread():
     """在单独的线程中运行机器人"""

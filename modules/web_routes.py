@@ -312,10 +312,14 @@ def register_routes(app, notification_queue):
                 return jsonify({"success": False, "error": "没有可用的分流卖家"}), 400
             next_id, seller_ids, idx = result
             preferred_seller = next_id
+            logger.info(f"自动分流选择卖家: {preferred_seller} (索引: {idx}, 总卖家: {len(seller_ids)})")
+        else:
+            logger.info(f"用户指定接单人: {preferred_seller}")
         
         # 立即更新指针，确保不会被后续操作影响
-        set_seller_pointer_b_mode(idx + 1, seller_ids)
-        logger.info(f"已更新分流指针到 {idx + 1}")
+        if result:  # 只有在自动分流时才更新指针
+            set_seller_pointer_b_mode(idx + 1, seller_ids)
+            logger.info(f"已更新分流指针到 {idx + 1}, 下次将选择索引 {(idx + 1) % len(seller_ids)} 的卖家")
         
         logger.info(f"收到订单提交请求: 二维码={file_path}, 套餐={package}, 指定接单人={preferred_seller or '无'}")
         
