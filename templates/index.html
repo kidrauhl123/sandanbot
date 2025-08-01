@@ -1423,7 +1423,7 @@
   
   // 订单页面对象
   const orderPages = {};
-
+  
   // 默认价格，会被用户定制价格覆盖
   const WEB_PRICES = {
     '12': 140
@@ -1899,7 +1899,7 @@
     
     // 加载订单 - 延迟200ms加载，让页面其他部分先渲染
     setTimeout(() => {
-      loadOrders();
+    loadOrders();
     }, 200);
     
     // 启动自动刷新
@@ -2407,9 +2407,9 @@
     try {
       // 如果没有订单或订单已经有详细信息，则跳过
       if (!orders || orders.length === 0 || (orders[0].account && orders[0].password)) {
-        return;
-      }
-      
+      return;
+    }
+    
       const orderIds = orders.map(order => order.id).join(',');
       console.log(`加载${orders.length}个订单的详细信息...`);
       
@@ -2458,8 +2458,8 @@
                 } else {
                   accountCell.textContent = detailedOrder.account;
                 }
-              }
-              
+  }
+  
               // 更新接单人
               const sellerCell = element.querySelector('.seller-cell');
               if (sellerCell && detailedOrder.accepted_by) {
@@ -2549,7 +2549,7 @@
       autoRefreshInterval = null;
     }
   }
-  
+
   // 页面加载处理
   document.addEventListener('DOMContentLoaded', function() {
     // 初始化图片上传功能
@@ -2573,10 +2573,10 @@
       
       if (searchKeyword) {
         const filteredOrders = allOrders.filter(order => 
-          order.id.toString().includes(searchKeyword) || 
+        order.id.toString().includes(searchKeyword) || 
           (order.account && order.account.toLowerCase().includes(searchKeyword.toLowerCase()))
         );
-        renderOrders(filteredOrders);
+    renderOrders(filteredOrders);
       } else {
         if (orderPages[currentPage]) {
           renderOrders(orderPages[currentPage]);
@@ -2725,7 +2725,7 @@
       
       .emergency-mode-close:hover {
         opacity: 1;
-      }
+    }
     `;
     
     document.head.appendChild(style);
@@ -2737,7 +2737,7 @@
         notice.style.opacity = '0';
         notice.style.transform = 'translateY(20px)';
         setTimeout(() => notice.remove(), 500);
-      }
+    }
     }, 8000);
   }
 

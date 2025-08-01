@@ -12,6 +12,7 @@ from flask import Flask, request, jsonify, render_template, redirect, url_for, s
 import sqlite3
 import shutil
 import asyncio
+import datetime
 
 # 根据环境变量确定是否为生产环境
 is_production = os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PRODUCTION')
@@ -368,6 +369,41 @@ def handle_exception(e):
     traceback.print_exc()
     return jsonify({"error": str(e)}), 500
 
+# 健康检查端点
+@app.route('/health')
+def health_check():
+    """健康检查端点，用于平台监控"""
+    try:
+        # 尝试连接数据库
+        from modules.database import test_db_connection
+        db_ok = test_db_connection()
+        
+        health_status = {
+            "status": "healthy" if db_ok else "degraded",
+            "timestamp": datetime.datetime.now().isoformat(),
+            "version": os.environ.get('APP_VERSION', '1.0.0'),
+            "db_connection": "ok" if db_ok else "error"
+        }
+        
+        status_code = 200 if db_ok else 500
+        return jsonify(health_status), status_code
+    except Exception as e:
+        logger.error(f"健康检查失败: {str(e)}")
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.datetime.now().isoformat()
+        }), 500
+
+# 根路径响应
+@app.route('/')
+def root():
+    """根路径响应，确保基本路径可访问"""
+    if 'user_id' in session:
+        return redirect('/index')
+    else:
+        return redirect('/login')
+
 # ===== 主程序 =====
 if __name__ == "__main__":
     # 在启动前先尝试清理可能存在的锁文件和目录
@@ -446,4 +482,7 @@ if __name__ == "__main__":
     # 启动 Flask
     # 在生产环境中禁用debug模式，避免进程重启导致的问题
     debug_mode = False if is_production else True
-    app.run(host='0.0.0.0', debug=debug_mode)
+    # 确保使用环境变量中的PORT，这对于Railway平台至关重要
+    port = int(os.environ.get('PORT', 5000))
+    logger.info(f"应用将在端口 {port} 上启动")
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)

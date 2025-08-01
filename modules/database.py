@@ -2184,3 +2184,13 @@ def get_db_connection():
 def is_postgres():
     db_url = os.environ.get('DATABASE_URL') or globals().get('DATABASE_URL')
     return db_url and db_url.startswith('postgres')
+
+def test_db_connection():
+    """测试数据库连接是否正常，用于健康检查"""
+    try:
+        # 使用简单的查询测试连接
+        result = execute_query("SELECT 1 as test")
+        return result and len(result) > 0 and result[0]['test'] == 1
+    except Exception as e:
+        logger.error(f"数据库连接测试失败: {str(e)}")
+        return False
