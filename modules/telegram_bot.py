@@ -1072,400 +1072,131 @@ def update_order_status(order_id, status, handler_id=None):
         conn = get_db_connection()
         if not conn:
             logger.error(f"更新订单 {order_id} 状态时无法获取数据库连接")
-            print(f"ERROR: 更新订单 {order_id} 状态时无法获取数据库连接")
             return False
             
         cursor = conn.cursor()
+        timestamp = get_china_time()
         
         # 根据数据库类型执行不同的查询
         if DATABASE_URL.startswith('postgres'):
-            # PostgreSQL使用%s作为占位符，并且时间戳函数不同
-            if handler_id:
+            if status == STATUS['COMPLETED']:
                 cursor.execute(
-                    "UPDATE orders SET status = %s, handler_id = %s, updated_at = NOW() WHERE id = %s",
-                    (status, handler_id, order_id)
+                    "UPDATE orders SET status = %s, completed_at = %s WHERE id = %s",
+                    (status, timestamp, order_id)
+                )
+            elif status == STATUS['FAILED']:
+                cursor.execute(
+                    "UPDATE orders SET status = %s, completed_at = %s WHERE id = %s",
+                    (status, timestamp, order_id)
                 )
             else:
                 cursor.execute(
-                    "UPDATE orders SET status = %s, updated_at = NOW() WHERE id = %s",
-                    (status, order_id)
+                    "UPDATE orders SET status = %s, accepted_by = %s, accepted_at = %s WHERE id = %s",
+                    (status, handler_id, timestamp, order_id)
                 )
         else:
             # SQLite
-            if handler_id:
+            if status == STATUS['COMPLETED']:
                 cursor.execute(
-                    "UPDATE orders SET status = ?, handler_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (status, handler_id, order_id)
+                    "UPDATE orders SET status = ?, completed_at = ? WHERE id = ?",
+                    (status, timestamp, order_id)
+                )
+            elif status == STATUS['FAILED']:
+                cursor.execute(
+                    "UPDATE orders SET status = ?, completed_at = ? WHERE id = ?",
+                    (status, timestamp, order_id)
                 )
             else:
                 cursor.execute(
-                    "UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (status, order_id)
+                    "UPDATE orders SET status = ?, accepted_by = ?, accepted_at = ? WHERE id = ?",
+                    (status, handler_id, timestamp, order_id)
                 )
         
         conn.commit()
         conn.close()
         
         logger.info(f"已更新订单 {order_id} 状态为 {status}")
-        print(f"INFO: 已更新订单 {order_id} 状态为 {status}")
         return True
     except Exception as e:
         logger.error(f"更新订单 {order_id} 状态时出错: {str(e)}", exc_info=True)
-        print(f"ERROR: 更新订单 {order_id} 状态时出错: {str(e)}")
-        return False 
-
+        return False
+ 
 @callback_error_handler
 async def on_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理回调查询"""
-    global notification_queue  # 添加全局变量引用
-    
+    """处理按钮回调"""
     query = update.callback_query
+    user_id = query.from_user.id
     data = query.data
-    user_id = update.effective_user.id
     
-    logger.info(f"收到回调查询: {data} 来自用户 {user_id}")
+    logger.info(f"收到回调查询: 用户={user_id}, 数据={data}")
     
-    # 处理不同类型的回调
-    if data.startswith("accept:"):
-        # 内联实现接单逻辑，替代 on_accept 函数
-        try:
-            # 解析订单ID
-            oid = int(data.split(':')[1])
-            
-            # 获取用户信息
-            user_info = await get_user_info(user_id)
-            username = user_info.get('username', '')
-            first_name = user_info.get('first_name', '')
-            
-            # 标记订单为已接单
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            timestamp = get_china_time()
-            
-            # 检查订单状态
-            if DATABASE_URL.startswith('postgres'):
-                cursor.execute("SELECT status FROM orders WHERE id = %s", (oid,))
-            else:
-                cursor.execute("SELECT status FROM orders WHERE id = ?", (oid,))
-            
-            order_status = cursor.fetchone()
-            
-            if not order_status:
-                conn.close()
-                await query.answer("订单不存在", show_alert=True)
-                return
-            
-            # 如果订单已被接单，则拒绝
-            if order_status[0] != STATUS['SUBMITTED']:
-                conn.close()
-                await query.answer("该订单已被接单", show_alert=True)
-                return
+    # 立即应答回调查询，避免超时
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"应答回调查询失败: {str(e)}")
+    
+    try:
+        if data.startswith('done_'):
+            # 处理完成订单
+            order_id = int(data.split('_')[1])
+            logger.info(f"卖家 {user_id} 完成订单 {order_id}")
             
             # 更新订单状态
-            if DATABASE_URL.startswith('postgres'):
-                cursor.execute(
-                    """UPDATE orders SET status=%s, accepted_by=%s, accepted_by_username=%s, 
-                    accepted_by_first_name=%s, accepted_at=%s WHERE id=%s""",
-                    (STATUS['ACCEPTED'], str(user_id), username, first_name, timestamp, oid)
-                )
-            else:
-                cursor.execute(
-                    """UPDATE orders SET status=?, accepted_by=?, accepted_by_username=?, 
-                    accepted_by_first_name=?, accepted_at=? WHERE id=?""",
-                    (STATUS['ACCEPTED'], str(user_id), username, first_name, timestamp, oid)
-                )
-            conn.commit()
-            conn.close()
-            
-            # 更新按钮
-            keyboard = [
-                [
-                    InlineKeyboardButton("✅ Complete", callback_data=f"done_{oid}"),
-                    InlineKeyboardButton("❓ Any Problem", callback_data=f"problem_{oid}")
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_reply_markup(reply_markup=reply_markup)
-            await query.answer("订单已接单", show_alert=True)
-            logger.info(f"用户 {user_id} 已接单: {oid}")
-        except Exception as e:
-            logger.error(f"接单时出错: {str(e)}", exc_info=True)
-            await query.answer("接单失败，请稍后重试", show_alert=True)
-    # 注释掉A模式相关回调处理
-    # elif data.startswith("availability_accept_"):
-    #     # 处理卖家可用性确认
-    #     username = data.replace("availability_accept_", "")
-    #     await handle_availability_accept(query, user_id, username)
-    elif data.startswith("feedback:"):
-        # 内联实现反馈按钮逻辑，替代 on_feedback_button 函数
-        try:
-            parts = data.split(':')
-            if len(parts) < 3:
-                await query.answer("无效的反馈数据", show_alert=True)
-                return
-            
-            oid = int(parts[1])
-            action = parts[2]
-            
-            if action == "done":
-                # 重用 done_ 逻辑
-                new_data = f"done_{oid}"
-                query.data = new_data
-                # 递归调用自身处理 done_ 逻辑
-                return await on_callback_query(update, context)
-            elif action == "fail":
-                # 重用 fail_ 逻辑
-                new_data = f"fail_{oid}"
-                query.data = new_data
-                # 递归调用自身处理 fail_ 逻辑
-                return await on_callback_query(update, context)
-            else:
-                await query.answer("未知的反馈操作", show_alert=True)
-        except Exception as e:
-            logger.error(f"处理反馈按钮时出错: {str(e)}", exc_info=True)
-            await query.answer("处理反馈失败，请稍后重试", show_alert=True)
-    elif data.startswith("problem_"):
-        oid = int(data.split('_')[1])
-        
-        # 自动接单并标记为问题订单
-        try:
-            # 先自动接单
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # 检查订单状态
-            if DATABASE_URL.startswith('postgres'):
-                cursor.execute("SELECT status, accepted_by FROM orders WHERE id = %s", (oid,))
-            else:
-                cursor.execute("SELECT status, accepted_by FROM orders WHERE id = ?", (oid,))
-            
-            order_info = cursor.fetchone()
-            
-            if not order_info:
-                conn.close()
-                await query.answer("订单不存在", show_alert=True)
-                return
-            
-            status, accepted_by = order_info
-            
-            # 如果订单未被接单，自动接单
-            if status == STATUS['SUBMITTED'] and not accepted_by:
-                # 获取用户信息
-                user_info = await get_user_info(user_id)
-                username = user_info.get('username', '')
-                first_name = user_info.get('first_name', '')
+            if update_order_status(order_id, STATUS['COMPLETED'], user_id):
+                # 更新按钮状态
+                keyboard = [[InlineKeyboardButton("✅ 已完成", callback_data="completed")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
                 
-                timestamp = get_china_time()
+                try:
+                    await query.edit_message_reply_markup(reply_markup=reply_markup)
+                    logger.info(f"订单 {order_id} 按钮状态已更新")
+                except Exception as e:
+                    logger.warning(f"更新按钮状态失败: {str(e)}")
+                    # 如果更新按钮失败，发送新消息
+                    try:
+                        await query.message.reply_text(f"✅ 订单 #{order_id} 已完成！")
+                    except Exception as e2:
+                        logger.error(f"发送完成消息也失败: {str(e2)}")
+            else:
+                try:
+                    await query.message.reply_text(f"❌ 更新订单 #{order_id} 状态失败")
+                except Exception as e:
+                    logger.error(f"发送失败消息失败: {str(e)}")
+                    
+        elif data.startswith('fail_'):
+            # 处理失败订单
+            order_id = int(data.split('_')[1])
+            logger.info(f"卖家 {user_id} 标记订单 {order_id} 失败")
+            
+            # 更新订单状态
+            if update_order_status(order_id, STATUS['FAILED'], user_id):
+                # 更新按钮状态
+                keyboard = [[InlineKeyboardButton("❌ 已失败", callback_data="failed")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
                 
-                # 更新订单状态为已接单
-                if DATABASE_URL.startswith('postgres'):
-                    cursor.execute(
-                        """UPDATE orders SET status=%s, accepted_by=%s, accepted_by_username=%s, 
-                        accepted_by_first_name=%s, accepted_at=%s WHERE id=%s""",
-                        (STATUS['ACCEPTED'], str(user_id), username, first_name, timestamp, oid)
-                    )
-                else:
-                    cursor.execute(
-                        """UPDATE orders SET status=?, accepted_by=?, accepted_by_username=?, 
-                        accepted_by_first_name=?, accepted_at=? WHERE id=?""",
-                        (STATUS['ACCEPTED'], str(user_id), username, first_name, timestamp, oid)
-                    )
-                conn.commit()
-            
-            conn.close()
-        except Exception as e:
-            logger.error(f"标记问题订单时自动接单出错: {str(e)}", exc_info=True)
-            await query.answer("处理订单时出错，请稍后重试", show_alert=True)
-            return
-        
-        # 显示问题选择按钮
-        keyboard = [
-            [InlineKeyboardButton("1️⃣ if not done, i need a new code of this order", callback_data=f'need_new_code_{oid}')],
-            [InlineKeyboardButton("2️⃣ other problem", callback_data=f'other_problem_{oid}')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_reply_markup(reply_markup=reply_markup)
-        await query.answer("请选择问题类型", show_alert=True)
-        return
-    elif data.startswith("done_"):
-        oid = int(data.split('_')[1])
-        
-        # 自动接单并标记为完成（与 complete_ 逻辑一致）
-        try:
-            timestamp = get_china_time()
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            if DATABASE_URL.startswith('postgres'):
-                cursor.execute(
-                    "UPDATE orders SET status=%s, completed_at=%s WHERE id=%s",
-                    (STATUS['COMPLETED'], timestamp, oid)
-                )
+                try:
+                    await query.edit_message_reply_markup(reply_markup=reply_markup)
+                    logger.info(f"订单 {order_id} 按钮状态已更新为失败")
+                except Exception as e:
+                    logger.warning(f"更新按钮状态失败: {str(e)}")
+                    # 如果更新按钮失败，发送新消息
+                    try:
+                        await query.message.reply_text(f"❌ 订单 #{order_id} 已标记为失败")
+                    except Exception as e2:
+                        logger.error(f"发送失败消息也失败: {str(e2)}")
             else:
-                cursor.execute(
-                    "UPDATE orders SET status=?, completed_at=? WHERE id=?",
-                    (STATUS['COMPLETED'], timestamp, oid)
-                )
-            conn.commit()
-            conn.close()
-            # 向通知队列推送状态变更，供网页端更新
-            if notification_queue:
-                notification_queue.put({
-                    'type': 'order_status_change',
-                    'order_id': oid,
-                    'status': STATUS['COMPLETED'],
-                    'handler_id': user_id
-                })
-                logger.info(f"已将订单 #{oid} 状态变更(完成)添加到通知队列")
-            # 更新按钮显示
-            keyboard = [[InlineKeyboardButton("✅ Completed", callback_data="noop")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_reply_markup(reply_markup=reply_markup)
-            await query.answer("订单已标记为完成", show_alert=True)
-            logger.info(f"用户 {user_id} 已将订单 {oid} 标记为完成 (done_)")
-        except Exception as e:
-            logger.error(f"处理订单完成(done_)时出错: {str(e)}", exc_info=True)
-            await query.answer("处理订单时出错，请稍后重试", show_alert=True)
-        return
-    elif data.startswith("need_new_code_") or data.startswith("other_problem_"):
-        oid = int(data.split('_')[-1])
+                try:
+                    await query.message.reply_text(f"❌ 更新订单 #{order_id} 状态失败")
+                except Exception as e:
+                    logger.error(f"发送失败消息失败: {str(e)}")
         
-        # 将订单标记为失败
+    except Exception as e:
+        logger.error(f"处理回调查询时出错: {str(e)}", exc_info=True)
         try:
-            timestamp = get_china_time()
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            if DATABASE_URL.startswith('postgres'):
-                cursor.execute(
-                    "UPDATE orders SET status=%s, completed_at=%s WHERE id=%s",
-                    (STATUS['FAILED'], timestamp, oid)
-                )
-            else:
-                cursor.execute(
-                    "UPDATE orders SET status=?, completed_at=? WHERE id=?",
-                    (STATUS['FAILED'], timestamp, oid)
-                )
-            conn.commit()
-            conn.close()
-            
-            # 添加通知队列，更新网页端状态
-            if notification_queue:
-                notification_queue.put({
-                    'type': 'order_status_change',
-                    'order_id': oid,
-                    'status': STATUS['FAILED'],
-                    'handler_id': user_id
-                })
-                logger.info(f"已将订单 #{oid} 状态变更添加到通知队列")
-            
-            # 更新消息显示
-            keyboard = [[InlineKeyboardButton("❌ Problem Reported", callback_data="noop")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_reply_markup(reply_markup=reply_markup)
-            
-            problem_type = "需要新的二维码" if data.startswith("need_new_code_") else "其他问题"
-            await query.answer(f"已报告问题: {problem_type}", show_alert=True)
-            logger.info(f"用户 {user_id} 已报告订单 {oid} 问题: {problem_type}")
-        except Exception as e:
-            logger.error(f"处理订单问题时出错: {str(e)}", exc_info=True)
-            await query.answer("处理订单时出错，请稍后重试", show_alert=True)
-        return
-    elif data.startswith("fail_"):
-        oid = int(data.split('_')[1])
-        try:
-            timestamp = get_china_time()
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            if DATABASE_URL.startswith('postgres'):
-                cursor.execute(
-                    "UPDATE orders SET status=%s, completed_at=%s WHERE id=%s",
-                    (STATUS['FAILED'], timestamp, oid)
-                )
-            else:
-                cursor.execute(
-                    "UPDATE orders SET status=?, completed_at=? WHERE id=?",
-                    (STATUS['FAILED'], timestamp, oid)
-                )
-            conn.commit()
-            conn.close()
-
-            # 向通知队列推送状态变更，供网页端更新
-            if notification_queue:
-                notification_queue.put({
-                    'type': 'order_status_change',
-                    'order_id': oid,
-                    'status': STATUS['FAILED'],
-                    'handler_id': user_id
-                })
-                logger.info(f"已将订单 #{oid} 状态变更(失败)添加到通知队列")
-
-            # 更新按钮显示
-            keyboard = [[InlineKeyboardButton("❌ Failed", callback_data="noop")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_reply_markup(reply_markup=reply_markup)
-            await query.answer("订单已标记为失败", show_alert=True)
-        except Exception as e:
-            logger.error(f"处理订单失败(fail_)时出错: {str(e)}", exc_info=True)
-            await query.answer("处理订单时出错，请稍后重试", show_alert=True)
-        return
-    elif data == "activity_confirm":
-        # 更新卖家最后活跃时间
-        update_seller_last_active(user_id)
-        
-        # 回复确认
-        await query.answer("感谢您的确认，您的在线状态已更新", show_alert=True)
-        
-        # 更新消息，移除按钮
-        await query.edit_message_text(
-            text=f"✅ *活跃度确认成功*\n\n您已确认在线。\n\n⏰ 确认时间: {get_china_time()}",
-            parse_mode='Markdown'
-        )
-        
-        logger.info(f"卖家 {user_id} 已确认活跃状态")
-        return
-    elif data.startswith("complete_"):
-        oid = int(data.split('_')[1])
-
-        # 与 done_ 分支相同的处理逻辑
-        try:
-            timestamp = get_china_time()
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            if DATABASE_URL.startswith('postgres'):
-                cursor.execute(
-                    "UPDATE orders SET status=%s, completed_at=%s WHERE id=%s",
-                    (STATUS['COMPLETED'], timestamp, oid)
-                )
-            else:
-                cursor.execute(
-                    "UPDATE orders SET status=?, completed_at=? WHERE id=?",
-                    (STATUS['COMPLETED'], timestamp, oid)
-                )
-            conn.commit()
-            conn.close()
-
-            # 推送通知给网页端
-            if notification_queue:
-                notification_queue.put({
-                    'type': 'order_status_change',
-                    'order_id': oid,
-                    'status': STATUS['COMPLETED'],
-                    'handler_id': user_id
-                })
-                logger.info(f"已将订单 #{oid} 状态变更(完成)添加到通知队列 (complete_)")
-
-            # 更新按钮显示
-            keyboard = [[InlineKeyboardButton("✅ Completed", callback_data="noop")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_reply_markup(reply_markup=reply_markup)
-            await query.answer("订单已标记为完成", show_alert=True)
-            logger.info(f"用户 {user_id} 已将订单 {oid} 标记为完成 (complete_)")
-        except Exception as e:
-            logger.error(f"处理订单完成(complete_)时出错: {str(e)}", exc_info=True)
-            await query.answer("处理订单时出错，请稍后重试", show_alert=True)
-        return
-    else:
-        await query.answer("Unknown command")
+            await query.message.reply_text("处理请求时出错，请重试")
+        except Exception as e2:
+            logger.error(f"发送错误消息失败: {str(e2)}")
 
 # ====== 自动修复：添加测试通知命令处理函数 ======
 async def on_test_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1604,10 +1335,6 @@ async def send_order_notification_direct(order_id, account, remark, preferred_se
     try:
         # 检查bot_application是否可用
         global bot_application
-        logger.info(f"[直接通知] bot_application状态: {bot_application is not None}")
-        if bot_application:
-            logger.info(f"[直接通知] bot_application.bot状态: {bot_application.bot is not None}")
-        
         if not bot_application or not bot_application.bot:
             logger.error(f"[直接通知] bot_application 未初始化")
             return False
@@ -1630,61 +1357,44 @@ async def send_order_notification_direct(order_id, account, remark, preferred_se
         
         logger.info(f"[直接通知] 找到图片文件: {image_path}")
         
-        # 首先尝试发送简单的文本消息测试连接
+        # 准备消息内容
+        caption = f"*{remark}*" if remark else f"新订单 #{order_id}"
+        keyboard = [
+            [InlineKeyboardButton("✅ Complete", callback_data=f"done_{order_id}"),
+             InlineKeyboardButton("❓ Any Problem", callback_data=f"fail_{order_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # 直接发送图片消息
         try:
-            test_message = f"🔔 新订单通知 #{order_id}\n📝 备注: {remark or '无'}"
-            logger.info(f"[直接通知] 发送测试消息: {test_message}")
+            with open(image_path, 'rb') as photo_file:
+                photo_result = await asyncio.wait_for(
+                    bot_application.bot.send_photo(
+                        chat_id=int(preferred_seller),
+                        photo=photo_file,
+                        caption=caption,
+                        parse_mode='Markdown',
+                        reply_markup=reply_markup
+                    ),
+                    timeout=15
+                )
             
-            result = await asyncio.wait_for(
-                bot_application.bot.send_message(
-                    chat_id=int(preferred_seller),
-                    text=test_message
-                ),
-                timeout=10
-            )
-            logger.info(f"[直接通知] 测试消息发送成功，消息ID: {result.message_id}")
+            logger.info(f"[直接通知] 成功发送图片给卖家 {preferred_seller}，消息ID: {photo_result.message_id}")
             
-            # 如果文本消息成功，尝试发送图片
-            try:
-                caption = f"*{remark}*" if remark else f"新订单 #{order_id}"
-                keyboard = [
-                    [InlineKeyboardButton("✅ Complete", callback_data=f"done_{order_id}"),
-                     InlineKeyboardButton("❓ Any Problem", callback_data=f"fail_{order_id}")]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                with open(image_path, 'rb') as photo_file:
-                    photo_result = await asyncio.wait_for(
-                        bot_application.bot.send_photo(
-                            chat_id=int(preferred_seller),
-                            photo=photo_file,
-                            caption=caption,
-                            parse_mode='Markdown',
-                            reply_markup=reply_markup
-                        ),
-                        timeout=15
-                    )
-                
-                logger.info(f"[直接通知] 成功发送图片给卖家 {preferred_seller}，消息ID: {photo_result.message_id}")
-                
-                # 自动接单
-                success = await auto_accept_order(order_id, preferred_seller)
-                if success:
-                    logger.info(f"[直接通知] 卖家 {preferred_seller} 自动接单成功")
-                else:
-                    logger.warning(f"[直接通知] 卖家 {preferred_seller} 自动接单失败")
-                
-                return True
-                
-            except Exception as e:
-                logger.error(f"[直接通知] 发送图片失败: {str(e)}", exc_info=True)
-                return False
+            # 自动接单
+            success = await auto_accept_order(order_id, preferred_seller)
+            if success:
+                logger.info(f"[直接通知] 卖家 {preferred_seller} 自动接单成功")
+            else:
+                logger.warning(f"[直接通知] 卖家 {preferred_seller} 自动接单失败")
+            
+            return True
             
         except asyncio.TimeoutError:
-            logger.error(f"[直接通知] 发送消息给卖家 {preferred_seller} 超时")
+            logger.error(f"[直接通知] 发送图片给卖家 {preferred_seller} 超时")
             return False
         except Exception as e:
-            logger.error(f"[直接通知] 发送消息失败: {str(e)}", exc_info=True)
+            logger.error(f"[直接通知] 发送图片失败: {str(e)}", exc_info=True)
             return False
             
     except Exception as e:

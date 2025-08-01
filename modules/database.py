@@ -2132,12 +2132,17 @@ def get_next_seller_b_mode():
 # B模式：设置指针
 
 def set_seller_pointer_b_mode(new_pointer, seller_ids):
+    """设置B模式分流指针"""
     conn = get_db_connection()
     if not conn:
-        return
+        logger.error("无法获取数据库连接来更新分流指针")
+        return False
     try:
         cur = conn.cursor()
         ids_str = ','.join(seller_ids)
+        
+        logger.info(f"更新分流指针: new_pointer={new_pointer}, seller_ids={seller_ids}")
+        
         if is_postgres():
             cur.execute("""
                 INSERT INTO seller_round_robin (mode, user_id, seller_ids, pointer)
@@ -2149,7 +2154,20 @@ def set_seller_pointer_b_mode(new_pointer, seller_ids):
                 INSERT OR REPLACE INTO seller_round_robin (mode, user_id, seller_ids, pointer)
                 VALUES ('B', NULL, ?, ?)
             """, (ids_str, new_pointer))
+        
         conn.commit()
+        
+        # 验证更新是否成功
+        cur.execute("SELECT pointer FROM seller_round_robin WHERE mode='B' AND user_id IS NULL")
+        row = cur.fetchone()
+        actual_pointer = row[0] if row else 0
+        
+        logger.info(f"分流指针更新完成: 期望={new_pointer}, 实际={actual_pointer}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"更新分流指针失败: {str(e)}", exc_info=True)
+        return False
     finally:
         conn.close()
 
