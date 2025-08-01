@@ -541,15 +541,55 @@ async def bot_main(queue):
             if railway_url:
                 railway_url = f"https://{railway_url}"
         
-        # 总是尝试设置 Webhook，因为我们是在 Web 应用中运行
+        # 设置Webhook，添加重试机制和错误处理
         if railway_url:
             webhook_url = f"{railway_url}/telegram-webhook"
-            logger.info(f"设置 Telegram webhook: {webhook_url}")
-            print(f"DEBUG: 设置 Telegram webhook: {webhook_url}")
-            await bot_application.bot.set_webhook(
-                url=webhook_url,
-                allowed_updates=Update.ALL_TYPES
-            )
+            
+            # 先检查当前webhook设置
+            try:
+                webhook_info = await bot_application.bot.get_webhook_info()
+                current_url = webhook_info.url
+                
+                # 如果webhook已经正确设置，则跳过
+                if current_url == webhook_url:
+                    logger.info(f"Webhook已经设置为正确的URL: {webhook_url}，无需更改")
+                    print(f"DEBUG: Webhook已经设置为正确的URL: {webhook_url}，无需更改")
+                else:
+                    # 设置新的webhook
+                    logger.info(f"设置 Telegram webhook: {webhook_url}")
+                    print(f"DEBUG: 设置 Telegram webhook: {webhook_url}")
+                    
+                    # 添加重试机制
+                    max_retries = 3
+                    retry_count = 0
+                    retry_delay = 2  # 初始延迟2秒
+                    
+                    while retry_count < max_retries:
+                        try:
+                            await bot_application.bot.set_webhook(
+                                url=webhook_url,
+                                allowed_updates=Update.ALL_TYPES
+                            )
+                            logger.info("Webhook设置成功")
+                            break  # 成功设置，跳出循环
+                        except Exception as e:
+                            retry_count += 1
+                            if "Flood control" in str(e):
+                                logger.warning(f"Webhook设置触发流量控制，正在等待重试 ({retry_count}/{max_retries}): {str(e)}")
+                                print(f"WARNING: Webhook设置触发流量控制，正在等待重试 ({retry_count}/{max_retries})")
+                                
+                                # 指数退避策略
+                                await asyncio.sleep(retry_delay)
+                                retry_delay *= 2  # 每次失败后增加等待时间
+                            elif retry_count < max_retries:
+                                logger.error(f"Webhook设置失败，正在重试 ({retry_count}/{max_retries}): {str(e)}")
+                                await asyncio.sleep(retry_delay)
+                            else:
+                                logger.critical(f"Webhook设置失败，已达到最大重试次数: {str(e)}")
+                                print(f"CRITICAL: Webhook设置失败，已达到最大重试次数: {str(e)}")
+            except Exception as e:
+                logger.error(f"检查webhook信息时出错: {str(e)}")
+                print(f"ERROR: 检查webhook信息时出错: {str(e)}")
         else:
             logger.warning("无法获取公开URL，未设置webhook。机器人可能无法接收更新。")
 

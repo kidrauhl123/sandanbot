@@ -23,10 +23,14 @@ def start_bot():
         # 创建通知队列
         notification_queue = queue.Queue()
         
-        # 直接运行机器人
-        run_bot(notification_queue)
+        # 运行机器人（在单独的线程中）
+        import threading
+        bot_thread = threading.Thread(target=run_bot, args=(notification_queue,), daemon=True)
+        bot_thread.start()
         
-        logger.info("Telegram机器人启动成功")
+        logger.info("Telegram机器人线程已启动")
+        return notification_queue
         
     except Exception as e:
-        logger.error(f"启动Telegram机器人失败: {str(e)}", exc_info=True) 
+        logger.error(f"启动Telegram机器人失败: {str(e)}", exc_info=True)
+        return None 

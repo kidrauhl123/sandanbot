@@ -33,6 +33,8 @@ from modules.web_routes import register_routes
 from modules.constants import sync_env_sellers_to_db
 
 # 创建一个线程安全的队列用于在Flask和Telegram机器人之间通信
+# 这个队列将会在启动Telegram机器人时被替换为机器人内部创建的队列
+global notification_queue
 notification_queue = queue.Queue()
 
 # 锁目录路径
@@ -393,14 +395,14 @@ if __name__ == "__main__":
     sync_env_sellers_to_db()
     logger.info("环境变量卖家同步完成")
     
-    # 导入TG机器人模块
+    # 导入TG机器人模块并启动
     try:
         from modules.tgbot import start_bot
         
-        # 启动TG机器人线程
-        bot_thread = threading.Thread(target=start_bot, daemon=True)
-        bot_thread.start()
-        logger.info("Telegram机器人线程已启动")
+        # 直接启动TG机器人，内部已经创建了线程
+        global notification_queue  # 使用全局队列
+        notification_queue = start_bot()  # start_bot会返回创建的队列
+        logger.info("Telegram机器人已启动")
     except Exception as e:
         logger.error(f"启动TG机器人失败: {str(e)}", exc_info=True)
     
