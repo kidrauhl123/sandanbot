@@ -1515,13 +1515,7 @@ async def on_test_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if test_image_path and os.path.exists(test_image_path):
             # 发送测试通知
-            await send_notification_from_queue({
-                'type': 'new_order',
-                'order_id': 999999,  # 测试订单ID
-                'account': test_image_path,
-                'remark': '这是一条测试通知',
-                'preferred_seller': str(user_id)  # 只发给测试的卖家
-            })
+            await send_order_notification_direct(999999, test_image_path, '这是一条测试通知', str(user_id))
             await update.message.reply_text("测试通知已发送，请检查是否收到")
         else:
             await update.message.reply_text("创建测试图片失败，无法发送测试通知")
@@ -1602,3 +1596,71 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "/test - 测试机器人状态"
             )
             context.user_data['welcomed'] = True
+
+async def send_order_notification_direct(order_id, account, remark, preferred_seller):
+    """直接发送订单通知给指定卖家，不使用队列"""
+    logger.info(f"[直接通知] 开始处理订单 #{order_id} 的通知，目标卖家: {preferred_seller}")
+    
+    try:
+        # 检查订单是否存在
+        order = get_order_by_id(order_id)
+        if not order:
+            logger.error(f"[直接通知] 找不到订单: {order_id}")
+            return False
+        
+        # 检查图片文件是否存在
+        image_path = account
+        if not os.path.isabs(image_path):
+            # 如果是相对路径，转换为绝对路径
+            image_path = os.path.join(os.getcwd(), account)
+        
+        if not os.path.exists(image_path):
+            logger.error(f"[直接通知] 图片文件不存在: {image_path}")
+            return False
+        
+        logger.info(f"[直接通知] 找到图片文件: {image_path}")
+        
+        # 准备消息内容
+        caption = f"*{remark}*" if remark else f"新订单 #{order_id}"
+        keyboard = [
+            [InlineKeyboardButton("✅ Complete", callback_data=f"done_{order_id}"),
+             InlineKeyboardButton("❓ Any Problem", callback_data=f"fail_{order_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        logger.info(f"[直接通知] 准备发送图片给卖家 {preferred_seller}")
+        
+        # 发送图片消息
+        try:
+            await asyncio.wait_for(
+                bot_application.bot.send_photo(
+                    chat_id=int(preferred_seller),
+                    photo=open(image_path, 'rb'),
+                    caption=caption,
+                    parse_mode='Markdown',
+                    reply_markup=reply_markup
+                ),
+                timeout=15  # 15秒超时
+            )
+            
+            logger.info(f"[直接通知] 成功发送图片给卖家 {preferred_seller}")
+            
+            # 自动接单
+            success = await auto_accept_order(order_id, preferred_seller)
+            if success:
+                logger.info(f"[直接通知] 卖家 {preferred_seller} 自动接单成功")
+            else:
+                logger.warning(f"[直接通知] 卖家 {preferred_seller} 自动接单失败")
+            
+            return True
+            
+        except asyncio.TimeoutError:
+            logger.error(f"[直接通知] 发送图片给卖家 {preferred_seller} 超时")
+            return False
+        except Exception as e:
+            logger.error(f"[直接通知] 发送图片给卖家 {preferred_seller} 失败: {str(e)}", exc_info=True)
+            return False
+            
+    except Exception as e:
+        logger.error(f"[直接通知] 处理订单 #{order_id} 通知时出错: {str(e)}", exc_info=True)
+        return False

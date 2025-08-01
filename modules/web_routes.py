@@ -375,43 +375,47 @@ def register_routes(app, notification_queue):
                     "can_cancel": o[4] == STATUS['SUBMITTED'] and (session.get('is_admin') or session.get('user_id') == o[6])
                 })
             
-            # 触发立即通知卖家 - 获取新创建的订单ID并加入通知队列
+            # 触发立即通知卖家 - 直接调用TG通知函数
             if new_order_id:
                 from modules.database import mark_order_notified
                 mark_order_notified(new_order_id)
                 
-                # 获取最新的全局通知队列
-                from modules.telegram_bot import notification_queue as tg_queue
-                notification_q = tg_queue if tg_queue else notification_queue
-                if tg_queue:
-                    tg_queue.put({
-                        'type': 'new_order',
-                        'order_id': new_order_id,
-                        'account': file_path,
-                        'password': '',
-                        'package': package,
-                        'preferred_seller': preferred_seller,
-                        'remark': remark
-                    })
-                    logger.info(f"已将订单 #{new_order_id} 加入TG通知队列")
-                else:
-                    # 尝试使用传入的队列
-                    notification_queue.put({
-                        'type': 'new_order',
-                        'order_id': new_order_id,
-                        'account': file_path,
-                        'password': '',
-                        'package': package,
-                        'preferred_seller': preferred_seller,
-                        'remark': remark
-                    })
-                    logger.info(f"已将订单 #{new_order_id} 加入传入的通知队列")
+                logger.info(f"准备直接通知卖家 {preferred_seller} 关于订单 #{new_order_id}")
+                
+                # 直接调用TG通知函数，不使用队列
+                try:
+                    import asyncio
+                    from modules.telegram_bot import send_order_notification_direct
+                    
+                    # 在新线程中执行异步通知
+                    def notify_seller():
+                        try:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            loop.run_until_complete(send_order_notification_direct(
+                                order_id=new_order_id,
+                                account=file_path,
+                                remark=remark,
+                                preferred_seller=preferred_seller
+                            ))
+                            loop.close()
+                            logger.info(f"成功通知卖家 {preferred_seller} 关于订单 #{new_order_id}")
+                        except Exception as e:
+                            logger.error(f"通知卖家失败: {str(e)}", exc_info=True)
+                    
+                    import threading
+                    notify_thread = threading.Thread(target=notify_seller, daemon=True)
+                    notify_thread.start()
+                    
+                    logger.info(f"已启动通知线程为订单 #{new_order_id}")
+                    
+                except Exception as e:
+                    logger.error(f"启动通知线程失败: {str(e)}", exc_info=True)
                 
                 # 更新分流指针
-                if not request.form.get('preferred_seller', ''):
+                if result:  # 只有在自动分流时才更新指针
                     set_seller_pointer_b_mode(idx + 1, seller_ids)
-                logger.info(f"已将订单 #{new_order_id} 加入通知队列")
-                print(f"DEBUG: 已将订单 #{new_order_id} 加入通知队列")
+                    logger.info(f"已更新分流指针到 {idx + 1}, 下次将选择索引 {(idx + 1) % len(seller_ids)} 的卖家")
             else:
                 logger.warning("无法获取新创建的订单ID，无法发送通知")
                 print("WARNING: 无法获取新创建的订单ID，无法发送通知")
