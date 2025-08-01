@@ -2527,27 +2527,36 @@
     loadMoreContainer.style.display = 'block';
   }
   
-  // 自动刷新
+  // 自动刷新机制
+  let autoRefreshInterval = null;
+  let isAutoRefreshing = false;
+
   function startAutoRefresh() {
-    // 先清除之前的定时器
     if (autoRefreshInterval) {
       clearInterval(autoRefreshInterval);
     }
     
-    // 设置新的定时器，每15秒自动刷新一次（改为15秒，减轻服务器负担）
-    autoRefreshInterval = setInterval(() => {
-      if (document.visibilityState === 'visible' && !isLoading) { 
-        loadOrders(true, currentPage);
+    // 减少刷新频率到30秒，提高稳定性
+    autoRefreshInterval = setInterval(async () => {
+      if (!isAutoRefreshing && !isLoading) {
+        isAutoRefreshing = true;
+        try {
+          await loadOrders();
+        } catch (error) {
+          console.error('自动刷新出错:', error);
+        } finally {
+          isAutoRefreshing = false;
+        }
       }
-    }, 15000);
+    }, 30000); // 30秒刷新一次
   }
-  
-  // 停止自动刷新
+
   function stopAutoRefresh() {
     if (autoRefreshInterval) {
       clearInterval(autoRefreshInterval);
       autoRefreshInterval = null;
     }
+    isAutoRefreshing = false;
   }
 
   // 页面加载处理

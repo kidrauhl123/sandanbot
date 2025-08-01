@@ -1368,6 +1368,7 @@ async def send_order_notification_direct(order_id, account, remark, preferred_se
         # 直接发送图片消息
         try:
             with open(image_path, 'rb') as photo_file:
+                # 减少超时时间，避免阻塞
                 photo_result = await asyncio.wait_for(
                     bot_application.bot.send_photo(
                         chat_id=int(preferred_seller),
@@ -1376,7 +1377,7 @@ async def send_order_notification_direct(order_id, account, remark, preferred_se
                         parse_mode='Markdown',
                         reply_markup=reply_markup
                     ),
-                    timeout=15
+                    timeout=8  # 减少到8秒超时
                 )
             
             logger.info(f"[直接通知] 成功发送图片给卖家 {preferred_seller}，消息ID: {photo_result.message_id}")
@@ -1391,12 +1392,23 @@ async def send_order_notification_direct(order_id, account, remark, preferred_se
             return True
             
         except asyncio.TimeoutError:
-            logger.error(f"[直接通知] 发送图片给卖家 {preferred_seller} 超时")
-            return False
+            logger.error(f"[直接通知] 发送图片给卖家 {preferred_seller} 超时，尝试简化发送")
+            # 超时后尝试发送简单文本消息
+            try:
+                await asyncio.wait_for(
+                    bot_application.bot.send_message(
+                        chat_id=int(preferred_seller),
+                        text=f"新订单 #{order_id}\n图片: {image_path}\n备注: {remark or '无'}"
+                    ),
+                    timeout=5
+                )
+                logger.info(f"[直接通知] 发送简化文本消息成功")
+                # 仍然尝试自动接单
+                await auto_accept_order(order_id, preferred_seller)
+                return True
+            except Exception as e:
+                logger.error(f"[直接通知] 发送简化消息也失败: {str(e)}")
+                return False
         except Exception as e:
             logger.error(f"[直接通知] 发送图片失败: {str(e)}", exc_info=True)
             return False
-            
-    except Exception as e:
-        logger.error(f"[直接通知] 处理订单 #{order_id} 通知时出错: {str(e)}", exc_info=True)
-        return False

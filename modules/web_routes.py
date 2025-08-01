@@ -409,18 +409,32 @@ def register_routes(app, notification_queue):
             """, fetch=True)
             orders = []
             
-
-            
             for o in orders_raw:
+                # 处理接单人显示
+                accepted_by_display = ""
+                if o[6]:  # accepted_by字段
+                    accepted_by_display = get_seller_display_name(o[6])
+                    if not accepted_by_display:
+                        # 如果没有设置昵称，显示"卖家{ID}"
+                        accepted_by_display = f"卖家{o[6]}"
+                
+                # 处理二维码显示
+                account_display = o[1]  # account字段
+                if account_display and 'uploads' in account_display:
+                    # 确保二维码路径正确显示
+                    account_display = account_display
+                elif not account_display:
+                    account_display = "未上传二维码"
+                
                 orders.append({
                     "id": o[0],
-                    "account": o[1],
+                    "account": account_display,
                     "password": o[2],
                     "package": o[3],
                     "status": o[4],
                     "status_text": STATUS_TEXT_ZH.get(o[4], o[4]),
                     "created_at": o[5],
-                    "accepted_by": get_seller_display_name(o[6]) if o[6] else "",
+                    "accepted_by": accepted_by_display,
                     "accepted_at": o[7] or "",
                     "completed_at": o[8] or "",
                     "remark": o[9] or "",

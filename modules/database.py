@@ -612,22 +612,20 @@ def get_active_seller_ids():
 def get_active_sellers():
     """获取所有活跃的卖家的ID和昵称"""
     sellers = execute_query("""
-        SELECT telegram_id, nickname, username, first_name, 
-               last_active_at, desired_orders
+        SELECT telegram_id, nickname, username, first_name, last_active_at
         FROM sellers 
         WHERE is_active = TRUE AND distribution = TRUE
     """, fetch=True)
     
     result = []
     for seller in sellers:
-        telegram_id, nickname, username, first_name, last_active_at, desired_orders = seller
+        telegram_id, nickname, username, first_name, last_active_at = seller
         # 如果没有设置昵称，则使用first_name或username作为默认昵称
         display_name = nickname or first_name or f"卖家 {telegram_id}"
         result.append({
             "id": telegram_id,
             "name": display_name,
-            "last_active_at": last_active_at or "",
-            "desired_orders": desired_orders or 0
+            "last_active_at": last_active_at or ""
         })
     
     # 记录找到的活跃卖家
@@ -2143,15 +2141,17 @@ def set_seller_pointer_b_mode(new_pointer, seller_ids):
         
         logger.info(f"更新分流指针: new_pointer={new_pointer}, seller_ids={seller_ids}")
         
+        # 先删除旧记录，再插入新记录
         if is_postgres():
+            cur.execute("DELETE FROM seller_round_robin WHERE mode='B' AND user_id IS NULL")
             cur.execute("""
                 INSERT INTO seller_round_robin (mode, user_id, seller_ids, pointer)
                 VALUES ('B', NULL, %s, %s)
-                ON CONFLICT (mode, user_id) DO UPDATE SET seller_ids=EXCLUDED.seller_ids, pointer=EXCLUDED.pointer
             """, (ids_str, new_pointer))
         else:
+            cur.execute("DELETE FROM seller_round_robin WHERE mode='B' AND user_id IS NULL")
             cur.execute("""
-                INSERT OR REPLACE INTO seller_round_robin (mode, user_id, seller_ids, pointer)
+                INSERT INTO seller_round_robin (mode, user_id, seller_ids, pointer)
                 VALUES ('B', NULL, ?, ?)
             """, (ids_str, new_pointer))
         
@@ -2164,7 +2164,7 @@ def set_seller_pointer_b_mode(new_pointer, seller_ids):
         
         logger.info(f"分流指针更新完成: 期望={new_pointer}, 实际={actual_pointer}")
         
-        return True
+        return actual_pointer == new_pointer
     except Exception as e:
         logger.error(f"更新分流指针失败: {str(e)}", exc_info=True)
         return False
